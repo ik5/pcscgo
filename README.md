@@ -278,11 +278,12 @@ if errors.Is(err, context.Canceled) {
 
 | OS | Architectures | Backends |
 |----|---------------|----------|
-| Linux | amd64, 386, arm64, arm, ... | purego, dynamic, static |
-| FreeBSD | amd64, 386 | purego, dynamic, static |
-| OpenBSD | amd64 | purego, dynamic, static |
-| NetBSD | amd64 | purego, dynamic, static |
-| macOS | amd64, arm64 | purego (PCSC.framework) |
+| Linux | amd64, 386, arm64, arm, ... | purego, dynamic, static | ✅ Tested |
+| FreeBSD | amd64, 386 | purego, dynamic, static | ✅ Tested |
+| OpenBSD | amd64 | purego, dynamic, static | ✅ Tested |
+| NetBSD | amd64 | purego, dynamic, static | ✅ Tested |
+
+**macOS**: Not tested (no test hardware). Theoretically supported in purego mode via `PCSC.framework` — see `defaultLibraryPath()` in `backend_purego.go`. Contributions welcome.
 
 **Windows not supported** (different PC/SC API).
 

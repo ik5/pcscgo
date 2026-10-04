@@ -116,13 +116,13 @@
 //
 // PLATFORM SUPPORT
 //
-//   OS           | Architectures                    | Backends
-//   -------------|----------------------------------|---------------------------
-//   Linux        | amd64, 386, arm64, arm, ...      | purego, dynamic, static
-//   FreeBSD      | amd64, 386                       | purego, dynamic, static
-//   OpenBSD      | amd64                            | purego, dynamic, static
-//   NetBSD       | amd64                            | purego, dynamic, static
-//   macOS        | amd64, arm64                     | purego (via PCSC.framework)
+//   OS           | Architectures                    | Backends           | Status
+//   -------------|----------------------------------|--------------------|--------
+//   Linux        | amd64, 386, arm64, arm, ...      | purego, dyn, static| ✅ Tested
+//   FreeBSD      | amd64, 386                       | purego, dyn, static| ✅ Tested
+//   OpenBSD      | amd64                            | purego, dyn, static| ✅ Tested
+//   NetBSD       | amd64                            | purego, dyn, static| ✅ Tested
+//   macOS        | amd64, arm64                     | purego (framework) | ❓ Untested
 //
 // Windows is not supported (different PC/SC API).
 //

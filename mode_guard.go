@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: BSD-3-Clause
 //go:build !(pcsc_static || pcsc_dynamic || pcsc_purego) || (pcsc_static && pcsc_dynamic) || (pcsc_static && pcsc_purego) || (pcsc_dynamic && pcsc_purego)
 
 package pcscgo

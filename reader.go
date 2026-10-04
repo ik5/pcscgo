@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: BSD-3-Clause
 package pcscgo
 
 // Tags for requesting card and reader attributes

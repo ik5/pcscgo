@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: BSD-3-Clause
 // Package pcscgo implement the pcsc-lite c library.
 //
 // The structs from PCSCTLVStructure through PINPropertiesStructure are declared

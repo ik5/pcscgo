@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: BSD-3-Clause
 // Package main demonstrates a complete PC/SC smart card scanner using the pcscgo library.
 //
 // This example implements a smart card reader monitor similar to the standard

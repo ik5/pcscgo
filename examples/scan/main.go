@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: BSD-3-Clause
 // scan - PC/SC Smart Card Scanner
 //
 // This program demonstrates how to use the pcscgo package to monitor smart card

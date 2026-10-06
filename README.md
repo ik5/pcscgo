@@ -273,16 +273,16 @@ The library supports graceful shutdown via `SCardCancel`:
 var ctx pcscgo.SCardContext
 // ... establish context ...
 
-ctxWithCancel, cancel := context.WithCancel(context.Background())
+sigCh := make(chan os.Signal, 1)
+signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 go func() {
-    <-sigCh // wait for SIGINT/SIGTERM
-    cancel()
+    <-sigCh
     pcscgo.SCardCancel(ctx) // Interrupts blocking SCardGetStatusChange
 }()
 
 states := []pcscgo.SCardReaderState{...}
 err := pcscgo.SCardGetStatusChange(ctx, pcscgo.Infinite, states)
-if errors.Is(err, context.Canceled) {
+if errors.Is(err, pcscgo.SCardErrorCancelled) {
     // Graceful shutdown
 }
 ```

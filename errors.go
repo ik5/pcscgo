@@ -59,7 +59,7 @@ func (e *LoadError) Unwrap() error {
 // IsNotLoaded returns true if the error indicates the library is not loaded.
 func IsNotLoaded(err error) bool {
 	var le *LoadError
-	return errors.As(err, &le)
+	return errors.As(err, &le) && !errors.Is(err, ErrAlreadyLoaded)
 }
 
 // ErrAlreadyLoaded is returned when Load is called but a library is already loaded.

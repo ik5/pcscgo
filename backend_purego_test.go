@@ -56,24 +56,15 @@ func TestPuregoLoad_EnvVarOverride(t *testing.T) {
 }
 
 func TestPuregoLoad_AlreadyLoaded(t *testing.T) {
-	// Save original env
-	orig := os.Getenv("PCSCLITE_LIB_PATH")
-	defer func() {
-		if orig != "" {
-			os.Setenv("PCSCLITE_LIB_PATH", orig)
-		} else {
-			os.Unsetenv("PCSCLITE_LIB_PATH")
-		}
-	}()
-
-	// Use a path that might exist (won't actually load, but tests the logic)
-	// We can't easily test "already loaded" without a real library, so test the error type
-	err := Load("/definitely/does/not/exist.so")
-	if err == nil {
-		t.Fatal("expected error")
+	if err := Load("libpcsclite.so.1"); err != nil && !errors.Is(err, ErrAlreadyLoaded) {
+		t.Skipf("libpcsclite not available: %v", err)
 	}
-	if !IsNotLoaded(err) {
-		t.Error("IsNotLoaded should be true for failed load")
+	err := Load("libpcsclite.so.1")
+	if !errors.Is(err, ErrAlreadyLoaded) {
+		t.Fatalf("second Load error = %v, want ErrAlreadyLoaded", err)
+	}
+	if IsNotLoaded(err) {
+		t.Error("IsNotLoaded(ErrAlreadyLoaded) should be false")
 	}
 }
 

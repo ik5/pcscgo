@@ -9,7 +9,7 @@ A complete implementation of a smart card reader monitor similar to the standard
 - **Signal handling**: Proper Ctrl+C/SIGTERM handling using `SCardCancel` (like `pcsc_scan`)
 - **Three build modes**: purego, dynamic CGO, static CGO
 - **Memory safe**: Proper memory pinning for CGO backends
-- **Cross-platform**: Linux, FreeBSD, OpenBSD, NetBSD, macOS
+- **Cross-platform**: Linux, FreeBSD, OpenBSD, NetBSD
 
 ## Quick Start
 

@@ -422,11 +422,6 @@ func defaultLibraryPath() string {
 		return "libpcsclite.so.1"
 	case "freebsd", "openbsd", "netbsd":
 		return "libpcsclite.so"
-	case "darwin":
-		// NOTE: macOS support is untested (no test hardware).
-		// Purego mode uses PCSC.framework. CGO backends may need
-		// framework linking flags. Contributions welcome.
-		return "PCSC.framework/PCSC"
 	default:
 		return "libpcsclite.so"
 	}

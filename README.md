@@ -227,7 +227,6 @@ func main() {
 Default library paths by OS:
 - **Linux**: `libpcsclite.so.1`
 - **FreeBSD/OpenBSD/NetBSD**: `libpcsclite.so`
-- **macOS**: `PCSC.framework/PCSC`
 
 Override via `PCSCLITE_LIB_PATH` environment variable.
 
@@ -296,9 +295,7 @@ if errors.Is(err, pcscgo.SCardErrorCancelled) {
 | OpenBSD | amd64 | purego, dynamic, static | ✅ Tested |
 | NetBSD | amd64 | purego, dynamic, static | ✅ Tested |
 
-**macOS**: Not tested (no test hardware). Theoretically supported in purego mode via `PCSC.framework` — see `defaultLibraryPath()` in `backend_purego.go`. Contributions welcome.
-
-**Windows not supported** (different PC/SC API).
+**macOS and Windows are not supported** — the build fails on any OS outside the table (`libpcscgo_others.go`).
 
 ## Memory Layout Warning
 

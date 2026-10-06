@@ -98,7 +98,6 @@
 // If not set, defaults are used:
 //   Linux:        libpcsclite.so.1
 //   FreeBSD/OpenBSD/NetBSD: libpcsclite.so
-//   macOS:        PCSC.framework/PCSC
 //
 // EXAMPLE OUTPUT
 //

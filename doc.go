@@ -87,7 +87,6 @@
 // Default library paths by OS:
 //   - Linux:        libpcsclite.so.1
 //   - FreeBSD/OpenBSD/NetBSD: libpcsclite.so
-//   - macOS:        PCSC.framework/PCSC
 //
 // MEMORY LAYOUT WARNING
 //
@@ -125,9 +124,8 @@
 //   FreeBSD      | amd64, 386                       | purego, dyn, static| ✅ Tested
 //   OpenBSD      | amd64                            | purego, dyn, static| ✅ Tested
 //   NetBSD       | amd64                            | purego, dyn, static| ✅ Tested
-//   macOS        | amd64, arm64                     | purego (framework) | ❓ Untested
 //
-// Windows is not supported (different PC/SC API).
+// macOS and Windows are not supported; the build fails on any other OS.
 //
 // SEE ALSO
 //

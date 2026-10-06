@@ -78,11 +78,15 @@ func TestPuregoLoad_AlreadyLoaded(t *testing.T) {
 }
 
 func TestPuregoLoad_ExplicitThenUse(t *testing.T) {
-	if err := Load("libpcsclite.so.1"); err != nil && !errors.Is(err, ErrAlreadyLoaded) {
+	err := Load("libpcsclite.so.1")
+	if err != nil && !errors.Is(err, ErrAlreadyLoaded) {
 		t.Skipf("libpcsclite not available: %v", err)
 	}
+	if err == nil && PCSCLibraryPath() != "libpcsclite.so.1" {
+		t.Errorf("PCSCLibraryPath() = %q, want the path passed to Load", PCSCLibraryPath())
+	}
 	var ctx SCardContext
-	err := SCardEstablishContext(SCardScopeUser, nil, nil, &ctx)
+	err = SCardEstablishContext(SCardScopeUser, nil, nil, &ctx)
 	if errors.Is(err, ErrAlreadyLoaded) {
 		t.Fatalf("explicit Load broke later calls: %v", err)
 	}

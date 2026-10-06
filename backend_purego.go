@@ -14,8 +14,9 @@ import (
 )
 
 var (
-	mu     sync.RWMutex
-	handle uintptr // 0 means not loaded
+	mu         sync.RWMutex
+	handle     uintptr // 0 means not loaded
+	loadedPath string  // path passed to the successful Load
 )
 
 var (
@@ -83,16 +84,13 @@ var syms = []struct {
 }
 
 type puregoBackend struct {
-	loadOnce   sync.Once
-	loadErr    error
-	loadedPath string
+	loadOnce sync.Once
+	loadErr  error
 }
 
 func (b *puregoBackend) load() error {
 	b.loadOnce.Do(func() {
-		path := defaultLibraryPath()
-		b.loadedPath = path
-		b.loadErr = Load(path)
+		b.loadErr = Load(defaultLibraryPath())
 		if errors.Is(b.loadErr, ErrAlreadyLoaded) {
 			b.loadErr = nil
 		}
@@ -320,8 +318,10 @@ func (b *puregoBackend) StringifyError(rc Long) string {
 }
 
 func (b *puregoBackend) LibraryPath() string {
-	if b.loadedPath != "" {
-		return b.loadedPath
+	mu.RLock()
+	defer mu.RUnlock()
+	if loadedPath != "" {
+		return loadedPath
 	}
 	return defaultLibraryPath()
 }
@@ -375,6 +375,7 @@ func Load(path string) error {
 	}
 
 	handle = h
+	loadedPath = path
 	return nil
 }
 

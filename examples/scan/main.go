@@ -41,7 +41,6 @@ import (
 	"sync"
 	"syscall"
 	"time"
-	"unsafe"
 
 	"github.com/ik5/pcscgo"
 )
@@ -198,7 +197,7 @@ func (s *scanner) run() error {
 		s.mu.Lock()
 		// Process all state changes
 		for i := range s.states {
-			s.processStateChange(&s.states[i])
+			s.processStateChange(i, &s.states[i])
 		}
 
 		// After processing, update CurrentState to EventState for next iteration
@@ -291,54 +290,37 @@ func (s *scanner) setupStates() {
 			continue
 		}
 
-		// Use a local variable whose address we can safely take.
-		// This is safe because the variable lives for the duration of the program
-		// (it's captured in the states slice which lives until program exit).
-		readerIndex := i
+		// states[i] corresponds to readers[i]; the PnP entry is always last.
 		s.states[i] = pcscgo.SCardReaderState{
 			Reader:       readerPtr,
 			CurrentState: pcscgo.SCardStateUnaware, // We don't know the state yet
-			UserData:     unsafe.Pointer(&readerIndex),
 		}
 	}
 
 	// Also monitor for reader arrival/removal by adding a special "PnP" entry.
 	pnpPtr, err := syscall.BytePtrFromString("\\\\?PnP?\\Notification")
 	if err == nil {
-		pnpMarker := ^uintptr(0)
 		s.states = append(s.states, pcscgo.SCardReaderState{
 			Reader:       pnpPtr,
 			CurrentState: pcscgo.SCardStateUnaware,
-			UserData:     unsafe.Pointer(&pnpMarker),
 		})
 	}
 }
 
 // processStateChange handles a single reader's state change event.
-func (s *scanner) processStateChange(state *pcscgo.SCardReaderState) {
+func (s *scanner) processStateChange(i int, state *pcscgo.SCardReaderState) {
 	// Check if state actually changed
 	if state.EventState == state.CurrentState {
 		return // No change
 	}
 
-	// Determine reader name from UserData or Reader pointer
-	var readerName string
-	index := uintptr(state.UserData)
-
-	if index == ^uintptr(0) {
-		// PnP notification - handle separately
+	// Entries past the reader list are the PnP notification entry
+	if i >= len(s.readers) {
 		s.handlePnPNotification(state)
 		return
-	} else if int(index) < len(s.readers) {
-		readerName = s.readers[index]
-	} else {
-		// Fallback: try to read from Reader pointer
-		if state.Reader != nil {
-			readerName = s.goString(state.Reader)
-		} else {
-			readerName = fmt.Sprintf("Reader[%d]", index)
-		}
 	}
+	readerName := s.readers[i]
+	index := uintptr(i)
 
 	// Get or create status tracker for this reader
 	status, ok := s.statusMap[index]
@@ -432,46 +414,37 @@ func (s *scanner) handlePnPNotification(state *pcscgo.SCardReaderState) {
 
 // rebuildIfNeeded checks if the reader list has changed and rebuilds state array if needed.
 func (s *scanner) rebuildIfNeeded() {
-	// Check if we need to rebuild due to PnP notification
-	for _, state := range s.states {
-		index := uintptr(state.UserData)
-		if index == ^uintptr(0) && state.EventState&pcscgo.SCardStateChanged != 0 {
-			// PnP notification with change - re-enumerate readers
-			readers, err := s.listReaders()
-			if err != nil {
-				if s.verbose {
-					fmt.Printf("Warning: failed to re-enumerate readers: %v\n", err)
-				}
-				return
-			}
+	// The PnP notification entry is always the last state
+	if len(s.states) <= len(s.readers) || s.states[len(s.states)-1].EventState&pcscgo.SCardStateChanged == 0 {
+		return
+	}
 
-			// Check if reader list actually changed
-			if len(readers) != len(s.readers) || !equalStringSlices(readers, s.readers) {
-				fmt.Printf("Reader list changed, re-enumerating (%d -> %d readers)\n", len(s.readers), len(readers))
-				s.readers = readers
-				s.setupStates()
-				// Re-initialize statusMap
-				s.statusMap = make(map[uintptr]*readerStatus)
-				for _, state := range s.states {
-					index := uintptr(state.UserData)
-					var name string
-					if index == ^uintptr(0) {
-						name = "PnP Notification"
-					} else if int(index) < len(s.readers) {
-						name = s.readers[index]
-					} else if state.Reader != nil {
-						name = s.goString(state.Reader)
-					} else {
-						name = fmt.Sprintf("Reader[%d]", index)
-					}
-					s.statusMap[index] = &readerStatus{
-						name:           name,
-						wasConnected:   state.EventState&pcscgo.SCardStateUnavailable == 0,
-						wasCardPresent: state.EventState&pcscgo.SCardStatePresent != 0,
-					}
-				}
+	// PnP notification with change - re-enumerate readers
+	readers, err := s.listReaders()
+	if err != nil {
+		if s.verbose {
+			fmt.Printf("Warning: failed to re-enumerate readers: %v\n", err)
+		}
+		return
+	}
+
+	// Check if reader list actually changed
+	if len(readers) != len(s.readers) || !equalStringSlices(readers, s.readers) {
+		fmt.Printf("Reader list changed, re-enumerating (%d -> %d readers)\n", len(s.readers), len(readers))
+		s.readers = readers
+		s.setupStates()
+		// Re-initialize statusMap
+		s.statusMap = make(map[uintptr]*readerStatus)
+		for i, state := range s.states {
+			name := "PnP Notification"
+			if i < len(s.readers) {
+				name = s.readers[i]
 			}
-			break
+			s.statusMap[uintptr(i)] = &readerStatus{
+				name:           name,
+				wasConnected:   state.EventState&pcscgo.SCardStateUnavailable == 0,
+				wasCardPresent: state.EventState&pcscgo.SCardStatePresent != 0,
+			}
 		}
 	}
 }
@@ -566,23 +539,6 @@ func (s *scanner) formatHex(data []byte) string {
 		parts[i] = fmt.Sprintf("%02X", b)
 	}
 	return strings.Join(parts, " ")
-}
-
-// goString converts a C string (NUL-terminated) at the given pointer to a Go string.
-func (s *scanner) goString(ptr *pcscgo.Byte) string {
-	if ptr == nil {
-		return ""
-	}
-	p := unsafe.Pointer(ptr)
-	var result strings.Builder
-	for i := 0; ; i++ {
-		b := *(*byte)(unsafe.Add(p, i))
-		if b == 0 {
-			break
-		}
-		result.WriteByte(b)
-	}
-	return result.String()
 }
 
 // printModeInfo prints information about which build mode is running.

@@ -4,6 +4,7 @@
 package pcscgo
 
 import (
+	"errors"
 	"os"
 	"runtime"
 	"sync"
@@ -92,6 +93,9 @@ func (b *puregoBackend) load() error {
 		path := defaultLibraryPath()
 		b.loadedPath = path
 		b.loadErr = Load(path)
+		if errors.Is(b.loadErr, ErrAlreadyLoaded) {
+			b.loadErr = nil
+		}
 	})
 	return b.loadErr
 }

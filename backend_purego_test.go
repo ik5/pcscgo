@@ -74,6 +74,20 @@ func TestPuregoLoad_AlreadyLoaded(t *testing.T) {
 	}
 }
 
+func TestPuregoLoad_ExplicitThenUse(t *testing.T) {
+	if err := Load("libpcsclite.so.1"); err != nil && !errors.Is(err, ErrAlreadyLoaded) {
+		t.Skipf("libpcsclite not available: %v", err)
+	}
+	var ctx SCardContext
+	err := SCardEstablishContext(SCardScopeUser, nil, nil, &ctx)
+	if errors.Is(err, ErrAlreadyLoaded) {
+		t.Fatalf("explicit Load broke later calls: %v", err)
+	}
+	if err == nil {
+		_ = SCardReleaseContext(ctx)
+	}
+}
+
 func TestDefaultLibraryPath_EnvVar(t *testing.T) {
 	orig := os.Getenv("PCSCLITE_LIB_PATH")
 	defer func() {

@@ -309,8 +309,8 @@ func (s *scanner) setupStates() {
 
 // processStateChange handles a single reader's state change event.
 func (s *scanner) processStateChange(i int, state *pcscgo.SCardReaderState) {
-	// Check if state actually changed
-	if state.EventState == state.CurrentState {
+	// Check if state actually changed (the Changed flag alone is not a change)
+	if state.EventState&^pcscgo.SCardStateChanged == state.CurrentState&^pcscgo.SCardStateChanged {
 		return // No change
 	}
 

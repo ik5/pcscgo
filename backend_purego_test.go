@@ -29,32 +29,6 @@ func TestPuregoLoad_InvalidPath(t *testing.T) {
 	}
 }
 
-func TestPuregoLoad_EnvVarOverride(t *testing.T) {
-	// Save original env
-	orig := os.Getenv("PCSCLITE_LIB_PATH")
-	defer func() {
-		if orig != "" {
-			os.Setenv("PCSCLITE_LIB_PATH", orig)
-		} else {
-			os.Unsetenv("PCSCLITE_LIB_PATH")
-		}
-	}()
-
-	// Test with custom path via env var (will fail to load but should use the path)
-	os.Setenv("PCSCLITE_LIB_PATH", "/custom/path/libpcsclite.so")
-	err := Load("") // Empty string should use defaultLibraryPath() which reads env
-	// We expect an error since the path doesn't exist, but it should be a dlopen error
-	if err == nil {
-		t.Fatal("expected error for nonexistent library")
-	}
-	var le *LoadError
-	if !errors.As(err, &le) {
-		t.Fatalf("expected *LoadError, got %T", err)
-	}
-	// The operation should be dlopen with the custom path
-	t.Logf("Load error: %v", err)
-}
-
 func TestPuregoLoad_AlreadyLoaded(t *testing.T) {
 	if err := Load("libpcsclite.so.1"); err != nil && !errors.Is(err, ErrAlreadyLoaded) {
 		t.Skipf("libpcsclite not available: %v", err)

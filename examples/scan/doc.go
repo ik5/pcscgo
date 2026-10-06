@@ -114,7 +114,6 @@
 //     ATR: 3B 8F 80 01 80 4F 0C A0 00 00 03 06 03 00 01 00 00 00 00 6A
 //   [ACS ACR39U ICC Reader 01 00] CARD REMOVED
 //   [ACS ACR39U ICC Reader 01 00] READER DISCONNECTED (unavailable)
-//   READER REMOVED: (reader disconnected via PnP)
 //   ^C
 //   Shutting down...
 //   Released context

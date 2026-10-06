@@ -37,6 +37,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -382,33 +383,13 @@ func (s *scanner) processStateChange(i int, state *pcscgo.SCardReaderState) {
 	}
 }
 
-// handlePnPNotification processes PnP (Plug and Play) notifications for reader hot-plug.
+// handlePnPNotification reports PnP (Plug and Play) notifications for reader hot-plug.
+// pcscd only sets the Changed flag (plus an event counter in the upper 16 bits) on
+// this entry; which readers were added or removed is found by rebuildIfNeeded.
 func (s *scanner) handlePnPNotification(state *pcscgo.SCardReaderState) {
-	prev := state.CurrentState
-	curr := state.EventState
-
-	// PnP notification with Present = reader added
-	if curr&pcscgo.SCardStatePresent != 0 && prev&pcscgo.SCardStatePresent == 0 {
-		fmt.Println("READER ADDED: (new reader detected via PnP)")
-		return
-	}
-
-	// PnP notification with Empty = reader removed
-	if curr&pcscgo.SCardStateEmpty != 0 && prev&pcscgo.SCardStateEmpty == 0 {
-		fmt.Println("READER REMOVED: (reader disconnected via PnP)")
-		return
-	}
-
-	// PnP notification with Unavailable = reader became unavailable
-	if curr&pcscgo.SCardStateUnavailable != 0 && prev&pcscgo.SCardStateUnavailable == 0 {
-		fmt.Println("READER UNAVAILABLE: (reader disconnected via PnP)")
-		return
-	}
-
-	// Other PnP state changes
 	if s.verbose {
-		fmt.Printf("[PnP] State changed: 0x%x -> 0x%x\n", prev, curr)
-		s.printStateFlags(curr)
+		fmt.Printf("[PnP] State changed: 0x%x -> 0x%x\n", state.CurrentState, state.EventState)
+		s.printStateFlags(state.EventState)
 	}
 }
 
@@ -431,6 +412,16 @@ func (s *scanner) rebuildIfNeeded() {
 	// Check if reader list actually changed
 	if len(readers) != len(s.readers) || !equalStringSlices(readers, s.readers) {
 		fmt.Printf("Reader list changed, re-enumerating (%d -> %d readers)\n", len(s.readers), len(readers))
+		for _, r := range readers {
+			if !slices.Contains(s.readers, r) {
+				fmt.Printf("READER ADDED: %s\n", r)
+			}
+		}
+		for _, r := range s.readers {
+			if !slices.Contains(readers, r) {
+				fmt.Printf("READER REMOVED: %s\n", r)
+			}
+		}
 		s.readers = readers
 		s.setupStates()
 		// Re-initialize statusMap

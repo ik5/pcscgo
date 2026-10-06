@@ -122,10 +122,12 @@ The key technique: `SCardCancel` is called from the signal handler to interrupt 
 ### Reader Events
 
 ```
-[ACS ACR39U ICC Reader 01 00] READER DISCONNECTED (unavailable)
-READER REMOVED: (reader disconnected via PnP)
+Reader list changed, re-enumerating (1 -> 2 readers)
+READER ADDED: ACS ACR39U ICC Reader 01 00
 ...
-[New Reader Name] READER CONNECTED (available)
+[ACS ACR39U ICC Reader 01 00] READER DISCONNECTED (unavailable)
+Reader list changed, re-enumerating (2 -> 1 readers)
+READER REMOVED: ACS ACR39U ICC Reader 01 00
 ```
 
 ### Verbose Output

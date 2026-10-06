@@ -172,7 +172,7 @@ Update Current = Event  Process transition
 
 ## Requirements
 
-- Go 1.21+
+- Go 1.25+
 - pcscd running (`systemctl start pcscd`)
 - libpcsclite development headers (for CGO builds):
   - Debian/Ubuntu: `libpcsclite-dev`

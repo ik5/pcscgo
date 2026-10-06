@@ -2,7 +2,7 @@
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/ik5/pcscgo.svg)](https://pkg.go.dev/github.com/ik5/pcscgo)
 [![License](https://img.shields.io/badge/License-BSD--3--Clause-blue.svg)](LICENSE)
-[![Go Version](https://img.shields.io/badge/Go-1.21%2B-blue.svg)](https://golang.org)
+[![Go Version](https://img.shields.io/badge/Go-1.25%2B-blue.svg)](https://golang.org)
 
 **pcscgo** is a pure Go binding for PC/SC (PC/SC-Lite) smart card middleware. It enables Go applications to communicate with smart card readers via the PC/SC standard.
 
@@ -329,7 +329,7 @@ make all        # Builds scan, dyn_scan, st_scan
 
 ## Requirements
 
-- Go 1.21+
+- Go 1.25+
 - `pcscd` running (`systemctl start pcscd`)
 - libpcsclite development headers (for CGO builds):
   - Debian/Ubuntu: `libpcsclite-dev`

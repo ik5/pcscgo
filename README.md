@@ -134,7 +134,10 @@ This is the same mental model as the C API — pcscgo just makes it idiomatic Go
 package main
 
 import (
+	"errors"
 	"log"
+	"strings"
+
 	"github.com/ik5/pcscgo"
 )
 
@@ -147,15 +150,20 @@ func main() {
 	}
 	defer pcscgo.SCardReleaseContext(ctx)
 
-	// 2. List available readers
-	readers, err := pcscgo.SCardListReaders(ctx, "", nil)
-	if err != nil {
-		log.Fatal(err)
-	}
-	if len(readers) == 0 {
+	// 2. List available readers (query size, then fill buffer)
+	n, err := pcscgo.SCardListReaders(ctx, "", nil)
+	if errors.Is(err, pcscgo.SCardErrorNoReadersAvailable) {
 		log.Println("No readers found")
 		return
 	}
+	if err != nil {
+		log.Fatal(err)
+	}
+	buf := make([]byte, n)
+	if n, err = pcscgo.SCardListReaders(ctx, "", buf); err != nil {
+		log.Fatal(err)
+	}
+	readers := strings.Split(strings.TrimRight(string(buf[:n]), "\x00"), "\x00")
 
 	// 3. Connect to first reader
 	var card pcscgo.SCardHandle
@@ -166,10 +174,15 @@ func main() {
 	}
 	defer pcscgo.SCardDisconnect(card, pcscgo.SCardLeaveCard)
 
-	// 4. Send APDU command (example: SELECT AID)
-	selectAID := []byte{0x00, 0xA4, 0x04, 0x00, 0x0E, 0x31, 0x50, 0x41, 0x59, 0x2E, 0x53, 0x59, 0x53, 0x2E, 0x00, 0x03, 0x10}
+	// 4. Send APDU command (example: SELECT "1PAY.SYS.DDF01")
+	selectPSE := []byte{0x00, 0xA4, 0x04, 0x00, 0x0E,
+		'1', 'P', 'A', 'Y', '.', 'S', 'Y', 'S', '.', 'D', 'D', 'F', '0', '1', 0x00}
+	pci := pcscgo.SCardPCIT1()
+	if proto == pcscgo.SCardProtocolT0 {
+		pci = pcscgo.SCardPCIT0()
+	}
 	recv := make([]byte, 256)
-	n, err := pcscgo.SCardTransmit(card, pcscgo.SCardPCIT1(), selectAID, nil, recv)
+	n, err = pcscgo.SCardTransmit(card, pci, selectPSE, nil, recv)
 	if err != nil {
 		log.Fatal(err)
 	}

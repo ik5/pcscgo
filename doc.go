@@ -22,9 +22,12 @@
 //       }
 //       defer pcscgo.SCardReleaseContext(ctx)
 //
-//       // List readers
-//       readers, _ := pcscgo.SCardListReaders(ctx, "", nil)
-//       // ... use readers ...
+//       // List readers: query the size, then fill a buffer with a multi-string
+//       n, err := pcscgo.SCardListReaders(ctx, "", nil)
+//       // ... handle err (SCardErrorNoReadersAvailable when none) ...
+//       buf := make([]byte, n)
+//       n, err = pcscgo.SCardListReaders(ctx, "", buf)
+//       readers := strings.Split(strings.TrimRight(string(buf[:n]), "\x00"), "\x00")
 //   }
 //
 // BUILD TAGS

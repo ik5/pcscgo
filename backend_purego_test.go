@@ -11,6 +11,9 @@ import (
 
 func TestPuregoLoad_InvalidPath(t *testing.T) {
 	err := Load("/nonexistent/path/libpcsclite.so.1")
+	if errors.Is(err, ErrAlreadyLoaded) {
+		t.Skip("library already loaded by an earlier test; dlopen path not reachable")
+	}
 	if err == nil {
 		t.Fatal("expected error for nonexistent library")
 	}

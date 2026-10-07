@@ -2,7 +2,7 @@
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/ik5/pcscgo.svg)](https://pkg.go.dev/github.com/ik5/pcscgo)
 [![License](https://img.shields.io/badge/License-BSD--3--Clause-blue.svg)](LICENSE)
-[![Go Version](https://img.shields.io/badge/Go-1.21%2B-blue.svg)](https://golang.org)
+[![Go Version](https://img.shields.io/badge/Go-1.25%2B-blue.svg)](https://golang.org)
 
 **pcscgo** is a pure Go binding for PC/SC (PC/SC-Lite) smart card middleware. It enables Go applications to communicate with smart card readers via the PC/SC standard.
 
@@ -134,7 +134,10 @@ This is the same mental model as the C API — pcscgo just makes it idiomatic Go
 package main
 
 import (
+	"errors"
 	"log"
+	"strings"
+
 	"github.com/ik5/pcscgo"
 )
 
@@ -147,15 +150,20 @@ func main() {
 	}
 	defer pcscgo.SCardReleaseContext(ctx)
 
-	// 2. List available readers
-	readers, err := pcscgo.SCardListReaders(ctx, "", nil)
-	if err != nil {
-		log.Fatal(err)
-	}
-	if len(readers) == 0 {
+	// 2. List available readers (query size, then fill buffer)
+	n, err := pcscgo.SCardListReaders(ctx, "", nil)
+	if errors.Is(err, pcscgo.SCardErrorNoReadersAvailable) {
 		log.Println("No readers found")
 		return
 	}
+	if err != nil {
+		log.Fatal(err)
+	}
+	buf := make([]byte, n)
+	if n, err = pcscgo.SCardListReaders(ctx, "", buf); err != nil {
+		log.Fatal(err)
+	}
+	readers := strings.Split(strings.TrimRight(string(buf[:n]), "\x00"), "\x00")
 
 	// 3. Connect to first reader
 	var card pcscgo.SCardHandle
@@ -166,10 +174,15 @@ func main() {
 	}
 	defer pcscgo.SCardDisconnect(card, pcscgo.SCardLeaveCard)
 
-	// 4. Send APDU command (example: SELECT AID)
-	selectAID := []byte{0x00, 0xA4, 0x04, 0x00, 0x0E, 0x31, 0x50, 0x41, 0x59, 0x2E, 0x53, 0x59, 0x53, 0x2E, 0x00, 0x03, 0x10}
+	// 4. Send APDU command (example: SELECT "1PAY.SYS.DDF01")
+	selectPSE := []byte{0x00, 0xA4, 0x04, 0x00, 0x0E,
+		'1', 'P', 'A', 'Y', '.', 'S', 'Y', 'S', '.', 'D', 'D', 'F', '0', '1', 0x00}
+	pci := pcscgo.SCardPCIT1()
+	if proto == pcscgo.SCardProtocolT0 {
+		pci = pcscgo.SCardPCIT0()
+	}
 	recv := make([]byte, 256)
-	n, err := pcscgo.SCardTransmit(card, pcscgo.SCardPCIT1(), selectAID, nil, recv)
+	n, err = pcscgo.SCardTransmit(card, pci, selectPSE, nil, recv)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -214,7 +227,6 @@ func main() {
 Default library paths by OS:
 - **Linux**: `libpcsclite.so.1`
 - **FreeBSD/OpenBSD/NetBSD**: `libpcsclite.so`
-- **macOS**: `PCSC.framework/PCSC`
 
 Override via `PCSCLITE_LIB_PATH` environment variable.
 
@@ -260,16 +272,16 @@ The library supports graceful shutdown via `SCardCancel`:
 var ctx pcscgo.SCardContext
 // ... establish context ...
 
-ctxWithCancel, cancel := context.WithCancel(context.Background())
+sigCh := make(chan os.Signal, 1)
+signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 go func() {
-    <-sigCh // wait for SIGINT/SIGTERM
-    cancel()
+    <-sigCh
     pcscgo.SCardCancel(ctx) // Interrupts blocking SCardGetStatusChange
 }()
 
 states := []pcscgo.SCardReaderState{...}
 err := pcscgo.SCardGetStatusChange(ctx, pcscgo.Infinite, states)
-if errors.Is(err, context.Canceled) {
+if errors.Is(err, pcscgo.SCardErrorCancelled) {
     // Graceful shutdown
 }
 ```
@@ -283,9 +295,7 @@ if errors.Is(err, context.Canceled) {
 | OpenBSD | amd64 | purego, dynamic, static | ✅ Tested |
 | NetBSD | amd64 | purego, dynamic, static | ✅ Tested |
 
-**macOS**: Not tested (no test hardware). Theoretically supported in purego mode via `PCSC.framework` — see `defaultLibraryPath()` in `backend_purego.go`. Contributions welcome.
-
-**Windows not supported** (different PC/SC API).
+**macOS and Windows are not supported** — the build fails on any OS outside the table (`libpcscgo_others.go`).
 
 ## Memory Layout Warning
 
@@ -319,7 +329,7 @@ make all        # Builds scan, dyn_scan, st_scan
 
 ## Requirements
 
-- Go 1.21+
+- Go 1.25+
 - `pcscd` running (`systemctl start pcscd`)
 - libpcsclite development headers (for CGO builds):
   - Debian/Ubuntu: `libpcsclite-dev`

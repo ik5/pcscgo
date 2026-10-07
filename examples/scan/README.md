@@ -9,7 +9,7 @@ A complete implementation of a smart card reader monitor similar to the standard
 - **Signal handling**: Proper Ctrl+C/SIGTERM handling using `SCardCancel` (like `pcsc_scan`)
 - **Three build modes**: purego, dynamic CGO, static CGO
 - **Memory safe**: Proper memory pinning for CGO backends
-- **Cross-platform**: Linux, FreeBSD, OpenBSD, NetBSD, macOS
+- **Cross-platform**: Linux, FreeBSD, OpenBSD, NetBSD
 
 ## Quick Start
 
@@ -122,10 +122,12 @@ The key technique: `SCardCancel` is called from the signal handler to interrupt 
 ### Reader Events
 
 ```
-[ACS ACR39U ICC Reader 01 00] READER DISCONNECTED (unavailable)
-READER REMOVED: (reader disconnected via PnP)
+Reader list changed, re-enumerating (1 -> 2 readers)
+READER ADDED: ACS ACR39U ICC Reader 01 00
 ...
-[New Reader Name] READER CONNECTED (available)
+[ACS ACR39U ICC Reader 01 00] READER DISCONNECTED (unavailable)
+Reader list changed, re-enumerating (2 -> 1 readers)
+READER REMOVED: ACS ACR39U ICC Reader 01 00
 ```
 
 ### Verbose Output
@@ -172,7 +174,7 @@ Update Current = Event  Process transition
 
 ## Requirements
 
-- Go 1.21+
+- Go 1.25+
 - pcscd running (`systemctl start pcscd`)
 - libpcsclite development headers (for CGO builds):
   - Debian/Ubuntu: `libpcsclite-dev`

@@ -6,15 +6,16 @@ import (
 	"testing"
 )
 
-func setupMockBackend() *mockBackend {
+func setupMockBackend(t *testing.T) *mockBackend {
+	prev := backend
+	t.Cleanup(func() { SetBackend(prev) })
 	m := &mockBackend{}
 	SetBackend(m)
 	return m
 }
 
 func TestSCardEstablishContext(t *testing.T) {
-	m := setupMockBackend()
-	defer SetBackend(nil)
+	m := setupMockBackend(t)
 
 	var ctx SCardContext
 
@@ -47,8 +48,7 @@ func TestSCardEstablishContext(t *testing.T) {
 }
 
 func TestSCardReleaseContext(t *testing.T) {
-	m := setupMockBackend()
-	defer SetBackend(nil)
+	m := setupMockBackend(t)
 
 	err := SCardReleaseContext(SCardContext(123))
 	if err != nil {
@@ -60,8 +60,7 @@ func TestSCardReleaseContext(t *testing.T) {
 }
 
 func TestSCardIsValidContext(t *testing.T) {
-	m := setupMockBackend()
-	defer SetBackend(nil)
+	m := setupMockBackend(t)
 
 	err := SCardIsValidContext(SCardContext(123))
 	if err != nil {
@@ -73,8 +72,7 @@ func TestSCardIsValidContext(t *testing.T) {
 }
 
 func TestSCardConnect(t *testing.T) {
-	m := setupMockBackend()
-	defer SetBackend(nil)
+	m := setupMockBackend(t)
 
 	var card SCardHandle
 	var proto DWord
@@ -109,8 +107,7 @@ func TestSCardConnect(t *testing.T) {
 }
 
 func TestSCardReconnect(t *testing.T) {
-	m := setupMockBackend()
-	defer SetBackend(nil)
+	m := setupMockBackend(t)
 
 	var proto DWord
 	err := SCardReconnect(SCardHandle(1), SCardShareExclusive, SCardProtocolT1, SCardResetCard, &proto)
@@ -123,8 +120,7 @@ func TestSCardReconnect(t *testing.T) {
 }
 
 func TestSCardDisconnect(t *testing.T) {
-	m := setupMockBackend()
-	defer SetBackend(nil)
+	m := setupMockBackend(t)
 
 	err := SCardDisconnect(SCardHandle(1), SCardUnpowerCard)
 	if err != nil {
@@ -139,8 +135,7 @@ func TestSCardDisconnect(t *testing.T) {
 }
 
 func TestSCardBeginTransaction(t *testing.T) {
-	m := setupMockBackend()
-	defer SetBackend(nil)
+	m := setupMockBackend(t)
 
 	err := SCardBeginTransaction(SCardHandle(1))
 	if err != nil {
@@ -152,8 +147,7 @@ func TestSCardBeginTransaction(t *testing.T) {
 }
 
 func TestSCardEndTransaction(t *testing.T) {
-	m := setupMockBackend()
-	defer SetBackend(nil)
+	m := setupMockBackend(t)
 
 	err := SCardEndTransaction(SCardHandle(1), SCardResetCard)
 	if err != nil {
@@ -165,8 +159,7 @@ func TestSCardEndTransaction(t *testing.T) {
 }
 
 func TestSCardStatus(t *testing.T) {
-	m := setupMockBackend()
-	defer SetBackend(nil)
+	m := setupMockBackend(t)
 
 	readerName := make([]byte, 256)
 	atr := make([]byte, MaxATRSize)
@@ -185,8 +178,7 @@ func TestSCardStatus(t *testing.T) {
 }
 
 func TestSCardGetStatusChange(t *testing.T) {
-	m := setupMockBackend()
-	defer SetBackend(nil)
+	m := setupMockBackend(t)
 
 	states := []SCardReaderState{
 		{CurrentState: SCardStateUnaware},
@@ -203,8 +195,7 @@ func TestSCardGetStatusChange(t *testing.T) {
 }
 
 func TestSCardControl(t *testing.T) {
-	m := setupMockBackend()
-	defer SetBackend(nil)
+	m := setupMockBackend(t)
 
 	send := []byte{0x01, 0x02, 0x03}
 	recv := make([]byte, 256)
@@ -226,8 +217,7 @@ func TestSCardControl(t *testing.T) {
 }
 
 func TestSCardTransmit(t *testing.T) {
-	m := setupMockBackend()
-	defer SetBackend(nil)
+	m := setupMockBackend(t)
 
 	send := []byte{0x00, 0xA4, 0x04, 0x00, 0x00}
 	recv := make([]byte, 256)
@@ -250,8 +240,7 @@ func TestSCardTransmit(t *testing.T) {
 }
 
 func TestSCardListReaderGroups(t *testing.T) {
-	m := setupMockBackend()
-	defer SetBackend(nil)
+	m := setupMockBackend(t)
 
 	groups := make([]byte, 256)
 	n, err := SCardListReaderGroups(SCardContext(1), groups)
@@ -265,8 +254,7 @@ func TestSCardListReaderGroups(t *testing.T) {
 }
 
 func TestSCardListReaders(t *testing.T) {
-	m := setupMockBackend()
-	defer SetBackend(nil)
+	m := setupMockBackend(t)
 
 	readers := make([]byte, 256)
 	n, err := SCardListReaders(SCardContext(1), "", readers)
@@ -280,8 +268,7 @@ func TestSCardListReaders(t *testing.T) {
 }
 
 func TestSCardFreeMemory(t *testing.T) {
-	m := setupMockBackend()
-	defer SetBackend(nil)
+	m := setupMockBackend(t)
 
 	err := SCardFreeMemory(SCardContext(1), nil)
 	if err != nil {
@@ -293,8 +280,7 @@ func TestSCardFreeMemory(t *testing.T) {
 }
 
 func TestSCardCancel(t *testing.T) {
-	m := setupMockBackend()
-	defer SetBackend(nil)
+	m := setupMockBackend(t)
 
 	err := SCardCancel(SCardContext(1))
 	if err != nil {
@@ -306,8 +292,7 @@ func TestSCardCancel(t *testing.T) {
 }
 
 func TestSCardGetAttrib(t *testing.T) {
-	m := setupMockBackend()
-	defer SetBackend(nil)
+	m := setupMockBackend(t)
 
 	attr := make([]byte, 256)
 	n, err := SCardGetAttrib(SCardHandle(1), SCardAttrVendorName, attr)
@@ -324,8 +309,7 @@ func TestSCardGetAttrib(t *testing.T) {
 }
 
 func TestSCardSetAttrib(t *testing.T) {
-	m := setupMockBackend()
-	defer SetBackend(nil)
+	m := setupMockBackend(t)
 
 	attr := []byte{0x01, 0x02}
 	err := SCardSetAttrib(SCardHandle(1), SCardAttrDeviceFriendlyName, attr)
@@ -341,8 +325,7 @@ func TestSCardSetAttrib(t *testing.T) {
 }
 
 func TestSCardPCIT0(t *testing.T) {
-	_ = setupMockBackend()
-	defer SetBackend(nil)
+	_ = setupMockBackend(t)
 
 	pci := SCardPCIT0()
 	if pci == nil {
@@ -354,8 +337,7 @@ func TestSCardPCIT0(t *testing.T) {
 }
 
 func TestSCardPCIT1(t *testing.T) {
-	_ = setupMockBackend()
-	defer SetBackend(nil)
+	_ = setupMockBackend(t)
 
 	pci := SCardPCIT1()
 	if pci == nil {
@@ -367,8 +349,7 @@ func TestSCardPCIT1(t *testing.T) {
 }
 
 func TestSCardPCIRaw(t *testing.T) {
-	_ = setupMockBackend()
-	defer SetBackend(nil)
+	_ = setupMockBackend(t)
 
 	pci := SCardPCIRaw()
 	if pci == nil {
@@ -380,8 +361,7 @@ func TestSCardPCIRaw(t *testing.T) {
 }
 
 func TestPCSCStringifyError(t *testing.T) {
-	m := setupMockBackend()
-	defer SetBackend(nil)
+	m := setupMockBackend(t)
 
 	m.StringifyErrorResult = "Mock error message"
 	err := PCSCStringifyError(SCardErrorTimeout)
@@ -391,8 +371,7 @@ func TestPCSCStringifyError(t *testing.T) {
 }
 
 func TestPCSCLibraryPath_Mock(t *testing.T) {
-	_ = setupMockBackend()
-	defer SetBackend(nil)
+	_ = setupMockBackend(t)
 
 	path := PCSCLibraryPath()
 	if path != "/mock/libpcsclite.so" {
@@ -401,8 +380,7 @@ func TestPCSCLibraryPath_Mock(t *testing.T) {
 }
 
 func TestErrorPropagation(t *testing.T) {
-	m := setupMockBackend()
-	defer SetBackend(nil)
+	m := setupMockBackend(t)
 
 	var card SCardHandle
 	var proto DWord

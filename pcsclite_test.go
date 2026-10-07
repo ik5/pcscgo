@@ -149,6 +149,11 @@ func TestIsNotLoaded(t *testing.T) {
 	if IsNotLoaded(errors.New("some other error")) {
 		t.Error("IsNotLoaded(other error) should be false")
 	}
+
+	// Already loaded means the library IS loaded
+	if IsNotLoaded(&LoadError{Op: "load", Err: ErrAlreadyLoaded}) {
+		t.Error("IsNotLoaded(ErrAlreadyLoaded) should be false")
+	}
 }
 
 func TestDefaultLibraryPath(t *testing.T) {

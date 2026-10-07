@@ -11,6 +11,9 @@ import (
 
 func TestPuregoLoad_InvalidPath(t *testing.T) {
 	err := Load("/nonexistent/path/libpcsclite.so.1")
+	if errors.Is(err, ErrAlreadyLoaded) {
+		t.Skip("library already loaded by an earlier test; dlopen path not reachable")
+	}
 	if err == nil {
 		t.Fatal("expected error for nonexistent library")
 	}
@@ -26,51 +29,34 @@ func TestPuregoLoad_InvalidPath(t *testing.T) {
 	}
 }
 
-func TestPuregoLoad_EnvVarOverride(t *testing.T) {
-	// Save original env
-	orig := os.Getenv("PCSCLITE_LIB_PATH")
-	defer func() {
-		if orig != "" {
-			os.Setenv("PCSCLITE_LIB_PATH", orig)
-		} else {
-			os.Unsetenv("PCSCLITE_LIB_PATH")
-		}
-	}()
-
-	// Test with custom path via env var (will fail to load but should use the path)
-	os.Setenv("PCSCLITE_LIB_PATH", "/custom/path/libpcsclite.so")
-	err := Load("") // Empty string should use defaultLibraryPath() which reads env
-	// We expect an error since the path doesn't exist, but it should be a dlopen error
-	if err == nil {
-		t.Fatal("expected error for nonexistent library")
+func TestPuregoLoad_AlreadyLoaded(t *testing.T) {
+	if err := Load("libpcsclite.so.1"); err != nil && !errors.Is(err, ErrAlreadyLoaded) {
+		t.Skipf("libpcsclite not available: %v", err)
 	}
-	var le *LoadError
-	if !errors.As(err, &le) {
-		t.Fatalf("expected *LoadError, got %T", err)
+	err := Load("libpcsclite.so.1")
+	if !errors.Is(err, ErrAlreadyLoaded) {
+		t.Fatalf("second Load error = %v, want ErrAlreadyLoaded", err)
 	}
-	// The operation should be dlopen with the custom path
-	t.Logf("Load error: %v", err)
+	if IsNotLoaded(err) {
+		t.Error("IsNotLoaded(ErrAlreadyLoaded) should be false")
+	}
 }
 
-func TestPuregoLoad_AlreadyLoaded(t *testing.T) {
-	// Save original env
-	orig := os.Getenv("PCSCLITE_LIB_PATH")
-	defer func() {
-		if orig != "" {
-			os.Setenv("PCSCLITE_LIB_PATH", orig)
-		} else {
-			os.Unsetenv("PCSCLITE_LIB_PATH")
-		}
-	}()
-
-	// Use a path that might exist (won't actually load, but tests the logic)
-	// We can't easily test "already loaded" without a real library, so test the error type
-	err := Load("/definitely/does/not/exist.so")
-	if err == nil {
-		t.Fatal("expected error")
+func TestPuregoLoad_ExplicitThenUse(t *testing.T) {
+	err := Load("libpcsclite.so.1")
+	if err != nil && !errors.Is(err, ErrAlreadyLoaded) {
+		t.Skipf("libpcsclite not available: %v", err)
 	}
-	if !IsNotLoaded(err) {
-		t.Error("IsNotLoaded should be true for failed load")
+	if err == nil && PCSCLibraryPath() != "libpcsclite.so.1" {
+		t.Errorf("PCSCLibraryPath() = %q, want the path passed to Load", PCSCLibraryPath())
+	}
+	var ctx SCardContext
+	err = SCardEstablishContext(SCardScopeUser, nil, nil, &ctx)
+	if errors.Is(err, ErrAlreadyLoaded) {
+		t.Fatalf("explicit Load broke later calls: %v", err)
+	}
+	if err == nil {
+		_ = SCardReleaseContext(ctx)
 	}
 }
 

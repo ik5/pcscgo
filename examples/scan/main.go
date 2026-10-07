@@ -471,10 +471,15 @@ func (s *scanner) printCardInfo(state *pcscgo.SCardReaderState) {
 			fmt.Printf("  ATR Length: %d bytes\n", state.ATRLength)
 		}
 	}
-	if state.EventState&pcscgo.SCardStatePresent != 0 {
+	switch {
+	case state.EventState&pcscgo.SCardStateMute != 0:
+		fmt.Println("  Card is mute (not responding, no ATR)")
+	case state.EventState&pcscgo.SCardStateUnpowered != 0:
 		if s.verbose {
-			fmt.Println("  Card is present and powered")
+			fmt.Println("  Card is present but unpowered")
 		}
+	case s.verbose:
+		fmt.Println("  Card is present and powered")
 	}
 }
 

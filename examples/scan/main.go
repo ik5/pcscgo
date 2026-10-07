@@ -441,8 +441,12 @@ func (s *scanner) rebuildIfNeeded() {
 }
 
 // listReaders calls SCardListReaders to get all reader names.
+// pcsc-lite reports "no readers" as SCardErrorNoReadersAvailable, which is an empty list here.
 func (s *scanner) listReaders() ([]string, error) {
 	n, err := pcscgo.SCardListReaders(s.ctxHandle, "", nil)
+	if errors.Is(err, pcscgo.SCardErrorNoReadersAvailable) {
+		n, err = 0, nil
+	}
 	if err != nil {
 		return nil, fmt.Errorf("SCardListReaders (query size) failed: %w", err)
 	}
@@ -455,6 +459,9 @@ func (s *scanner) listReaders() ([]string, error) {
 
 	buf := make([]byte, n)
 	n, err = pcscgo.SCardListReaders(s.ctxHandle, "", buf)
+	if errors.Is(err, pcscgo.SCardErrorNoReadersAvailable) {
+		return []string{}, nil // last reader removed between the two calls
+	}
 	if err != nil {
 		return nil, fmt.Errorf("SCardListReaders (read) failed: %w", err)
 	}

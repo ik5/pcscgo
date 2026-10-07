@@ -451,9 +451,6 @@ func (s *scanner) listReaders() ([]string, error) {
 		return nil, fmt.Errorf("SCardListReaders (query size) failed: %w", err)
 	}
 	if n == 0 {
-		if s.verbose {
-			fmt.Println("No readers found")
-		}
 		return []string{}, nil
 	}
 

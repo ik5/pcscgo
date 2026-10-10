@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause
+
 // Package pcscgo provides a pure Go binding for PC/SC (PC/SC-Lite) smart card middleware.
 //
 // pcscgo enables Go applications to communicate with smart card readers via the

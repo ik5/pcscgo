@@ -288,8 +288,8 @@ if errors.Is(err, pcscgo.SCardErrorCancelled) {
 
 ## Platform Support
 
-| OS | Architectures | Backends |
-|----|---------------|----------|
+| OS | Architectures | Backends | Status |
+|----|---------------|----------|--------|
 | Linux | amd64, 386, arm64, arm, ... | purego, dynamic, static | ✅ Tested |
 | FreeBSD | amd64, 386 | purego, dynamic, static | ✅ Tested |
 | OpenBSD | amd64 | purego, dynamic, static | ✅ Tested |

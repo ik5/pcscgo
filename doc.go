@@ -12,38 +12,38 @@
 //
 // QUICK START
 //
-//   import "github.com/ik5/pcscgo"
+//	import "github.com/ik5/pcscgo"
 //
-//   func main() {
-//       // Establish context
-//       var ctx pcscgo.SCardContext
-//       if err := pcscgo.SCardEstablishContext(pcscgo.SCardScopeUser, nil, nil, &ctx); err != nil {
-//           log.Fatal(err)
-//       }
-//       defer pcscgo.SCardReleaseContext(ctx)
+//	func main() {
+//	    // Establish context
+//	    var ctx pcscgo.SCardContext
+//	    if err := pcscgo.SCardEstablishContext(pcscgo.SCardScopeUser, nil, nil, &ctx); err != nil {
+//	        log.Fatal(err)
+//	    }
+//	    defer pcscgo.SCardReleaseContext(ctx)
 //
-//       // List readers: query the size, then fill a buffer with a multi-string
-//       n, err := pcscgo.SCardListReaders(ctx, "", nil)
-//       // ... handle err (SCardErrorNoReadersAvailable when none) ...
-//       buf := make([]byte, n)
-//       n, err = pcscgo.SCardListReaders(ctx, "", buf)
-//       readers := strings.Split(strings.TrimRight(string(buf[:n]), "\x00"), "\x00")
-//   }
+//	    // List readers: query the size, then fill a buffer with a multi-string
+//	    n, err := pcscgo.SCardListReaders(ctx, "", nil)
+//	    // ... handle err (SCardErrorNoReadersAvailable when none) ...
+//	    buf := make([]byte, n)
+//	    n, err = pcscgo.SCardListReaders(ctx, "", buf)
+//	    readers := strings.Split(strings.TrimRight(string(buf[:n]), "\x00"), "\x00")
+//	}
 //
-// BUILD TAGS
+// # BUILD TAGS
 //
 // Select exactly one backend at compile time:
 //
-//   // purego (no CGO, runtime loading)
-//   go build -tags=pcsc_purego
+//	// purego (no CGO, runtime loading)
+//	go build -tags=pcsc_purego
 //
-//   // dynamic CGO (shared library)
-//   CGO_ENABLED=1 go build -tags=pcsc_dynamic
+//	// dynamic CGO (shared library)
+//	CGO_ENABLED=1 go build -tags=pcsc_dynamic
 //
-//   // static CGO (static linking)
-//   CGO_ENABLED=1 go build -tags=pcsc_static
+//	// static CGO (static linking)
+//	CGO_ENABLED=1 go build -tags=pcsc_static
 //
-// ARCHITECTURE
+// # ARCHITECTURE
 //
 // The library separates the public API (winscard.go) from backend implementations:
 //   - Backend interface (backend.go) defines all PC/SC operations
@@ -51,19 +51,19 @@
 //   - backend_purego.go: purego implementation using github.com/ebitengine/purego
 //   - mode_guard.go: Enforces exactly one backend at compile time
 //
-// ERROR HANDLING
+// # ERROR HANDLING
 //
 // All public functions return error instead of raw error codes:
 //
-//   var ctx pcscgo.SCardContext
-//   err := pcscgo.SCardEstablishContext(pcscgo.SCardScopeUser, nil, nil, &ctx)
-//   if err != nil {
-//       var pcscErr *pcscgo.PCSCError
-//       if errors.As(err, &pcscErr) {
-//           // pcscErr.Code   - the raw PC/SC error code (e.g., 0x8010001D)
-//           // pcscErr.Message - human-readable message
-//       }
-//   }
+//	var ctx pcscgo.SCardContext
+//	err := pcscgo.SCardEstablishContext(pcscgo.SCardScopeUser, nil, nil, &ctx)
+//	if err != nil {
+//	    var pcscErr *pcscgo.PCSCError
+//	    if errors.As(err, &pcscErr) {
+//	        // pcscErr.Code   - the raw PC/SC error code (e.g., 0x8010001D)
+//	        // pcscErr.Message - human-readable message
+//	    }
+//	}
 //
 // Error types:
 //   - PCSCError: Wraps a PC/SC error code with message
@@ -72,23 +72,23 @@
 //
 // Use errors.Is/As for error checking:
 //
-//   if errors.Is(err, pcscgo.SCardErrorNoService) { ... }
-//   if errors.Is(err, pcscgo.ErrNotLoaded) { ... }
+//	if errors.Is(err, pcscgo.SCardErrorNoService) { ... }
+//	if errors.Is(err, pcscgo.ErrNotLoaded) { ... }
 //
-// PUREGO MODE
+// # PUREGO MODE
 //
 // In purego mode, the library must be loaded at runtime:
 //
-//   // Optional: custom library path (or set PCSCLITE_LIB_PATH env var)
-//   if err := pcscgo.Load("/usr/lib/x86_64-linux-gnu/libpcsclite.so.1"); err != nil {
-//       log.Fatal(err)
-//   }
+//	// Optional: custom library path (or set PCSCLITE_LIB_PATH env var)
+//	if err := pcscgo.Load("/usr/lib/x86_64-linux-gnu/libpcsclite.so.1"); err != nil {
+//	    log.Fatal(err)
+//	}
 //
 // Default library paths by OS:
 //   - Linux:        libpcsclite.so.1
 //   - FreeBSD/OpenBSD/NetBSD: libpcsclite.so
 //
-// MEMORY LAYOUT WARNING
+// # MEMORY LAYOUT WARNING
 //
 // The structs from PCSCTLVStructure through PINPropertiesStructure are declared
 // in reader.h between "#pragma pack(push, 1)" and "#pragma pack(pop)", so the C
@@ -110,7 +110,7 @@
 // Byte order: PCSCTLVStructure.Value is always big-endian (PC/SC part 10).
 // The PIN structures use host byte order.
 //
-// THREAD SAFETY
+// # THREAD SAFETY
 //
 // The library is safe for concurrent use. The purego backend uses mutexes
 // to protect library loading and symbol resolution. The CGO backend relies
@@ -118,12 +118,12 @@
 //
 // PLATFORM SUPPORT
 //
-//   OS           | Architectures                    | Backends           | Status
-//   -------------|----------------------------------|--------------------|--------
-//   Linux        | amd64, 386, arm64, arm, ...      | purego, dyn, static| ✅ Tested
-//   FreeBSD      | amd64, 386                       | purego, dyn, static| ✅ Tested
-//   OpenBSD      | amd64                            | purego, dyn, static| ✅ Tested
-//   NetBSD       | amd64                            | purego, dyn, static| ✅ Tested
+//	OS           | Architectures                    | Backends           | Status
+//	-------------|----------------------------------|--------------------|--------
+//	Linux        | amd64, 386, arm64, arm, ...      | purego, dyn, static| ✅ Tested
+//	FreeBSD      | amd64, 386                       | purego, dyn, static| ✅ Tested
+//	OpenBSD      | amd64                            | purego, dyn, static| ✅ Tested
+//	NetBSD       | amd64                            | purego, dyn, static| ✅ Tested
 //
 // macOS and Windows are not supported; the build fails on any other OS.
 //

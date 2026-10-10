@@ -12,30 +12,30 @@
 //   - Handling PnP notifications for reader hot-plug detection
 //   - Memory pinning for CGO backends
 //
-// BUILD MODES
+// # BUILD MODES
 //
 // The scanner can be built in three different linking modes:
 //
-//   1. purego (runtime loading):     go build -tags=pcsc_purego -o scan
-//   2. dynamic CGO (shared library): CGO_ENABLED=1 go build -tags=pcsc_dynamic -o dyn_scan
-//   3. static CGO (static linking):  CGO_ENABLED=1 go build -tags=pcsc_static -o st_scan
+//  1. purego (runtime loading):     go build -tags=pcsc_purego -o scan
+//  2. dynamic CGO (shared library): CGO_ENABLED=1 go build -tags=pcsc_dynamic -o dyn_scan
+//  3. static CGO (static linking):  CGO_ENABLED=1 go build -tags=pcsc_static -o st_scan
 //
 // The Makefile provides convenient targets: make scan, make dyn_scan, make st_scan,
 // make all, make clean, make test.
 //
 // RUNNING
 //
-//   ./scan              # purego with default library path
-//   ./scan -lib /path   # purego with custom library path
-//   ./dyn_scan          # dynamic CGO
-//   ./st_scan           # static CGO
+//	./scan              # purego with default library path
+//	./scan -lib /path   # purego with custom library path
+//	./dyn_scan          # dynamic CGO
+//	./st_scan           # static CGO
 //
-//   Flags:
-//     -lib string       # Path to libpcsclite.so (purego only)
-//     -timeout duration # -1=infinite (default), 0=1s poll, >0=custom ms
-//     -v                # Verbose output
+//	Flags:
+//	  -lib string       # Path to libpcsclite.so (purego only)
+//	  -timeout duration # -1=infinite (default), 0=1s poll, >0=custom ms
+//	  -v                # Verbose output
 //
-// ARCHITECTURE
+// # ARCHITECTURE
 //
 // The scanner uses the standard PC/SC event-driven model:
 //
@@ -44,7 +44,7 @@
 //  3. SCardGetStatusChange - block until reader state changes
 //  4. Process events, update state, repeat
 //
-// KEY DESIGN POINTS
+// # KEY DESIGN POINTS
 //
 // Signal Handling:
 //
@@ -81,7 +81,7 @@
 // the scanner re-enumerates the reader list and rebuilds its internal
 // state array.
 //
-// BUILD TAGS
+// # BUILD TAGS
 //
 // The three backends are selected via build tags:
 //   - pcsc_purego:   Uses github.com/ebitengine/purego for runtime dlopen/dlsym
@@ -90,33 +90,35 @@
 //
 // Only one backend is compiled at a time (enforced by mode_guard.go in pcscgo).
 //
-// ENVIRONMENT
+// # ENVIRONMENT
 //
 // The purego backend can be configured via environment variable:
-//   PCSCLITE_LIB_PATH=/path/to/libpcsclite.so
+//
+//	PCSCLITE_LIB_PATH=/path/to/libpcsclite.so
 //
 // If not set, defaults are used:
-//   Linux:        libpcsclite.so.1
-//   FreeBSD/OpenBSD/NetBSD: libpcsclite.so
+//
+//	Linux:        libpcsclite.so.1
+//	FreeBSD/OpenBSD/NetBSD: libpcsclite.so
 //
 // EXAMPLE OUTPUT
 //
-//   === PC/SC Smart Card Scanner ===
-//   Mode: purego (runtime library loading)
-//   Library: libpcsclite.so.1 (default)
+//	=== PC/SC Smart Card Scanner ===
+//	Mode: purego (runtime library loading)
+//	Library: libpcsclite.so.1 (default)
 //
-//   Found 1 reader(s):
-//     0: ACS ACR39U ICC Reader 01 00
+//	Found 1 reader(s):
+//	  0: ACS ACR39U ICC Reader 01 00
 //
-//   Monitoring for card/reader events... (Press Ctrl+C to stop)
+//	Monitoring for card/reader events... (Press Ctrl+C to stop)
 //
-//   [ACS ACR39U ICC Reader 01 00] CARD INSERTED
-//     ATR: 3B 8F 80 01 80 4F 0C A0 00 00 03 06 03 00 01 00 00 00 00 6A
-//   [ACS ACR39U ICC Reader 01 00] CARD REMOVED
-//   [ACS ACR39U ICC Reader 01 00] READER DISCONNECTED (unavailable)
-//   ^C
-//   Shutting down...
-//   Released context
+//	[ACS ACR39U ICC Reader 01 00] CARD INSERTED
+//	  ATR: 3B 8F 80 01 80 4F 0C A0 00 00 03 06 03 00 01 00 00 00 00 6A
+//	[ACS ACR39U ICC Reader 01 00] CARD REMOVED
+//	[ACS ACR39U ICC Reader 01 00] READER DISCONNECTED (unavailable)
+//	^C
+//	Shutting down...
+//	Released context
 //
 // See the README.md for more details on building and running.
 package main

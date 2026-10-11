@@ -8,6 +8,53 @@ reference should read like familiar territory.
 > Scope: contact cards on Linux/BSD via PC/SC-Lite (what `pcscgo`
 > binds to). Contactless (NFC) and Windows/macOS specifics are out of scope.
 
+## Contents
+
+- [1. The cast of characters](#1-the-cast-of-characters)
+  - [1.1 The card](#11-the-card)
+  - [1.2 The reader](#12-the-reader)
+  - [1.3 The driver, the daemon, and the library](#13-the-driver-the-daemon-and-the-library)
+- [2. The PC/SC session model](#2-the-pcsc-session-model)
+  - [The card file system (four terms)](#the-card-file-system-four-terms)
+- [3. APDUs: structure, framing, validation, recovery](#3-apdus-structure-framing-validation-recovery)
+  - [3.1 Command anatomy](#31-command-anatomy-identify-the-case-from-the-bytes)
+  - [3.2 Response framing](#32-response-framing-knowing-it-ended)
+  - [3.3 Validation: reading the status word](#33-validation-reading-the-status-word)
+  - [3.4 Recovery: the three resend patterns](#34-recovery-the-three-resend-patterns)
+- [4. Power-up: reset, ATR, and PPS](#4-power-up-reset-atr-and-pps)
+- [5. ATR anatomy, byte by byte](#5-atr-anatomy-byte-by-byte)
+  - [5.1 TS](#51-ts--the-very-first-byte-which-bit-convention)
+  - [5.2 T0](#52-t0--the-table-of-contents)
+  - [5.3 TA1, TB1, TC1](#53-ta1-tb1-tc1--first-parameter-group)
+  - [5.4 TD1, TD2, …](#54-td1-td2--protocol-announcements-and-the-chain)
+  - [5.5 Historical bytes](#55-historical-bytes--the-free-form-id-card)
+  - [5.6 TCK](#56-tck--the-checksum)
+  - [5.7 Worked example](#57-worked-example-constructed-self-consistent)
+  - [5.8 Practical ATR use](#58-practical-atr-use)
+  - [5.9 Case study: one card, two ATRs](#59-case-study-one-card-two-atrs)
+- [6. Detecting what happened](#6-detecting-what-happened-insert-remove-disconnect-mute)
+  - [6.1 The state flags that matter](#61-the-state-flags-that-matter)
+  - [6.2 The three traps](#62-the-three-traps)
+  - [6.3 Reading the four situations](#63-reading-the-four-situations)
+  - [6.4 Reader add/remove: the PnP entry](#64-reader-addremove-the-pnp-entry)
+- [7. Troubleshooting: the adapter-board scenario](#7-troubleshooting-the-adapter-board-scenario)
+  - [7.1 Flags → action cheat sheet](#71-flags--action-cheat-sheet)
+  - [7.2 Why can the "same card" show different ATRs?](#72-why-can-the-same-card-show-different-atrs)
+  - [7.3 Checksum mismatch](#73-checksum-mismatch-what-to-do)
+  - [7.4 APDU-level troubleshooting](#74-apdu-level-troubleshooting)
+- [8. T=0 vs T=1](#8-t0-vs-t1-the-two-transport-protocols)
+  - [8.1 T=0](#81-t0--byte-oriented-the-old-default)
+  - [8.2 T=1](#82-t1--block-oriented)
+  - [8.3 What this means for your code](#83-what-this-means-for-your-code)
+- [9. Putting it together: the monitoring loop](#9-putting-it-together-the-monitoring-loop)
+- [10. Access control: voltage, write permission, PINs](#10-access-control-voltage-write-permission-pins)
+  - [10.1 Voltage is the reader's job](#101-voltage-is-the-readers-job-not-yours)
+  - [10.2 "Can I write to this file?"](#102-can-i-write-to-this-file)
+  - [10.3 PINs](#103-pins-when-which-how)
+- [11. Other contact cards](#11-other-contact-cards)
+- [12. Glossary](#12-glossary)
+- [13. Where to go next](#13-where-to-go-next)
+
 ---
 
 ## 1. The cast of characters

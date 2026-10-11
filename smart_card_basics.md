@@ -124,6 +124,16 @@ file. Inside the chip, data lives in a small tree. Four words:
 - **AID** — Application Identifier. **SELECT** (INS `0xA4`) chooses a DF
   or EF by path, file ID, or AID.
 
+```
+MF                      <- root
++-- DF  (one application)
+|   +-- EF              <- data (blob or records)
+|   `-- EF
+`-- DF  (another application)
+    `-- EF
+```
+
+`SCardConnect` is a session with the chip. SELECT sets the current file.
 Until SELECT succeeds, the card has no current file. Reads and writes
 then often return `69 86` or `6A 82`. That is the card talking, not a
 PC/SC reader failure. The same four terms apply to any microprocessor
@@ -152,6 +162,16 @@ CLA  INS  P1  P2  [Lc] [Data…] [Le]
 - `Lc` — length of outgoing `Data`; `Le` — max response bytes wanted.
 
 The body's shape falls into four cases — identified purely by length:
+
+```
+Case 1:  CLA INS P1 P2
+Case 2:  CLA INS P1 P2  Le
+Case 3:  CLA INS P1 P2  Lc  Data...
+Case 4:  CLA INS P1 P2  Lc  Data...  Le
+```
+
+Each box is one byte except `Data...`. `Lc` is the length of `Data`;
+`Le` is how many response bytes you will accept.
 
 | Case | Layout | Total length | Example |
 |------|--------|--------------|---------|
@@ -211,6 +231,21 @@ Framing discipline: always split `data = recv[:n-2]`, `sw = recv[n-2:]`;
    write if the read proves it didn't land. Reads are safe to re-issue
    freely.
 
+```
+61 xx  (more data, mostly T=0)
+  host --> COMMAND
+  card <-- 61 xx
+  host --> 00 C0 00 00 xx     GET RESPONSE
+  card <-- data + 61 yy   or  data + 90 00
+           (repeat GET RESPONSE until 90 00)
+
+6C xx  (wrong Le)
+  host --> COMMAND  (Le wrong)
+  card <-- 6C xx
+  host --> COMMAND  (same header+data, Le=xx)
+  card <-- data + 90 00
+```
+
 What `pcscgo` does and doesn't do here: `SCardTransmit` transports one
 APDU and reports `n` + error. The `61`/`6C` loops, buffer sizing
 (`pcscgo.MaxBufferSize` = 264 for short APDUs,
@@ -255,7 +290,9 @@ Notation below: `T0`, `TA1`… are the standard names from ISO 7816-3.
 Structure:
 
 ```
-TS | T0 | [TA1] [TB1] [TC1] [TD1] | [TA2] [TB2] [TC2] [TD2] | … | [H1…Hk] | [TCK]
+TS | T0 | [TA1] [TB1] [TC1] [TD1] | [TA2] ... | [H1..Hk] | [TCK]
+     |
+     +-- T0 splits as Y nibble (flags) and K nibble (hist count)
 ```
 
 ### 5.1 TS — the very first byte: which bit convention?
@@ -315,6 +352,15 @@ look like corruption.
 
 `T0` packs two things into one byte:
 
+```
+          Y = T0 >> 4                 K = T0 & 0x0F
+T0:  [ TD | TC | TB | TA ]       [ historical count 0..15 ]
+mask:  8    4    2    1
+raw: 0x80 0x40 0x20 0x10         T0&0x1 is K, not TA1
+```
+
+Example: `T0 = 0x9F` → Y=`9` (`1001`) → TA1 and TD1 present; K=15.
+
 - **High nibble** — presence flags for the first group of interface
   bytes, consumed in the order TA1, TB1, TC1, TD1. Take `y := T0 >> 4`,
   then: `y&0x1` → TA1, `y&0x2` → TB1, `y&0x4` → TC1, `y&0x8` → TD1.
@@ -328,9 +374,6 @@ look like corruption.
   what lives inside them, and how the first one tells you its own
   format, is described in
   [§5.5 Historical bytes — the free-form ID card](#55-historical-bytes--the-free-form-id-card).
-
-Example: `T0 = 0x9F` → high nibble `9` = `1001` → `TA1` and `TD1` present;
-`K = 15` historical bytes.
 
 ### 5.3 TA1, TB1, TC1 — first parameter group
 
@@ -776,7 +819,22 @@ side vs wire side) tells you reseating, not cable-swapping, is the fix.
 
 ## 8. T=0 vs T=1: the two transport protocols
 
-Both carry the same APDUs ([§3 APDUs: structure, framing, validation, recovery](#3-apdus-structure-framing-validation-recovery)); they differ in *how bytes cross the wire*.
+Both carry the same APDUs ([§3 APDUs: structure, framing, validation, recovery](#3-apdus-structure-framing-validation-recovery)); they differ in *how bytes cross the wire*. One I/O contact, both ways, not at once:
+
+```
+T=0  (byte handshake)
+  host --> CLA INS P1 P2
+  card <-- ACK (INS or INS xor FF)
+  host --> data byte, ...
+  card <-- 0x60 wait, or SW1 SW2
+
+T=1  (blocks)
+  host --> I-block (APDU + checksum)
+  card <-- R-block (got it / resend)
+  card <-- I-block (data + SW)
+```
+
+`SCardTransmit` hides this. You still send one APDU and get data+SW.
 
 ### 8.1 T=0 — byte-oriented, the old default
 

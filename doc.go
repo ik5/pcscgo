@@ -130,6 +130,7 @@
 //
 // SEE ALSO
 //
+//   - smart_card_basics.md: Beginner's guide to cards, readers, ATRs, APDUs, and troubleshooting
 //   - examples/scan: Complete smart card monitor (like pcsc_scan)
 //   - PC/SC Workgroup: https://pcscworkgroup.com/
 //   - pcsc-lite docs: https://pcsclite.apdu.fr/

@@ -33,13 +33,15 @@ A SIM card is just a microprocessor card in a small package. The "sizes"
 around it** — an adapter board is electrically passive, it only repositions
 the contacts. Keep that in mind in the troubleshooting section ([§7 Troubleshooting: the adapter-board scenario](#7-troubleshooting-the-adapter-board-scenario)):
 an adapter cannot change what the chip says, but it *can* break the
-electrical connection, and a broken connection looks like a sick card.
+electrical connection, and a broken connection looks like
+`SCardStateMute` (present but not answering).
 
 Cards speak over the contacts defined by ISO 7816-2: power (VCC), reset
 (RST), clock (CLK), ground (GND), programming voltage (VPP, obsolete), and
-one serial data line (I/O). There is exactly one wire for data in each
-direction, shared half-duplex — everything else is a protocol built on
-top of that wire ([§8 T=0 vs T=1: the two transport protocols](#8-t0-vs-t1-the-two-transport-protocols)).
+one serial data line (I/O). That **one I/O contact** carries bytes both
+ways, not at the same time (half-duplex). There is no separate TX and RX
+wire. T=0 and T=1 are protocols on that single line
+([§8 T=0 vs T=1: the two transport protocols](#8-t0-vs-t1-the-two-transport-protocols)).
 
 ### 1.2 The reader
 
@@ -47,7 +49,7 @@ The reader is the electrical bridge between USB and the card contacts. Most
 USB readers speak **CCID** (Chip Card Interface Device), a standard USB
 class — that is why one generic driver covers most readers. The reader:
 
-- supplies power (modern cards: 1.8 V, 3 V, or 5 V — negotiated, [§5.5 Historical bytes — the free-form ID card](#55-historical-bytes--the-free-form-id-card)),
+- supplies power (modern cards: 1.8 V, 3 V, or 5 V — the reader negotiates the class during activation, [§10.1 Voltage is the reader's job, not yours](#101-voltage-is-the-readers-job-not-yours)),
 - supplies the clock,
 - performs the **reset sequence** that makes the card emit its ATR ([§5 ATR anatomy, byte by byte](#5-atr-anatomy-byte-by-byte)),
 - shuffles bytes between USB and the card's I/O line.
@@ -108,8 +110,24 @@ Key vocabulary:
   several slots).
 - **Card handle** — your connection to one card in one reader.
 - **APDU** (Application Protocol Data Unit) — one command/response pair.
-- **ATR** (Answer to Reset) — the bytes the card blurts out when powered
+- **ATR** (Answer to Reset) — the bytes the card sends when powered
   and reset. The subject of [§5 ATR anatomy, byte by byte](#5-atr-anatomy-byte-by-byte).
+
+### The card file system (four terms)
+
+`SCardConnect` opens a session with the chip. It does **not** choose a
+file. Inside the chip, data lives in a small tree. Four words:
+
+- **MF** — Master File, the root.
+- **DF** — Dedicated File, a directory. An application is usually a DF.
+- **EF** — Elementary File, a leaf that holds bytes (one blob, or records).
+- **AID** — Application Identifier. **SELECT** (INS `0xA4`) chooses a DF
+  or EF by path, file ID, or AID.
+
+Until SELECT succeeds, the card has no current file. Reads and writes
+then often return `69 86` or `6A 82`. That is the card talking, not a
+PC/SC reader failure. The same four terms apply to any microprocessor
+card; which DFs and EFs exist is family-specific (telecom, payment, ID).
 
 ---
 
@@ -137,7 +155,7 @@ The body's shape falls into four cases — identified purely by length:
 
 | Case | Layout | Total length | Example |
 |------|--------|--------------|---------|
-| 1 | header only | 4 | `00 A4 00 00` (schematic) |
+| 1 | header only | 4 | `00 A4 00 00` (header only, not a complete SELECT-with-AID) |
 | 2S | header + `Le` | 5 | `… Le` — last byte is Le |
 | 3S | header + `Lc` + Data | 5 + Lc | byte[4] = Lc = len − 5 |
 | 4S | header + `Lc` + Data + `Le` | 6 + Lc | byte[4] = Lc = len − 6 |
@@ -197,7 +215,7 @@ What `pcscgo` does and doesn't do here: `SCardTransmit` transports one
 APDU and reports `n` + error. The `61`/`6C` loops, buffer sizing
 (`pcscgo.MaxBufferSize` = 264 for short APDUs,
 `pcscgo.MaxBufferSizeExtended` for extended), and timeout discipline are
-caller code — see the loop sketch in [§9 Putting it together: the monitoring loop](#9-putting-it-together-the-monitoring-loop).
+caller code — [§8.3 What this means for your code](#83-what-this-means-for-your-code).
 
 You never parse voltages or clocks yourself: `SCardTransmit` takes the
 byte slice, the reader and card do the rest.
@@ -209,8 +227,9 @@ byte slice, the reader and card do the rest.
 When a card is powered (or `SCardReconnect` with reset, or a `SCardConnect`
 to an unpowered card), this happens electrically:
 
-1. Reader applies VCC and CLK.
-2. Reader pulses the RST line.
+1. RST is held low. The reader applies VCC, then CLK.
+2. The reader **releases** RST (the line goes inactive/high). It does not
+   send a short pulse.
 3. The card answers on the I/O line with the **ATR** — 2 to 33 bytes.
 4. Optionally, reader and card negotiate faster/different parameters
    (**PPS** — Protocol and Parameters Selection). If PPS fails, they fall
@@ -243,10 +262,9 @@ TS | T0 | [TA1] [TB1] [TC1] [TD1] | [TA2] [TB2] [TC2] [TD2] | … | [H1…Hk] | 
 
 `TS` is always exactly one of two values:
 
-- `0x3B` — **direct convention**: bits are sent as-is (this is what you
-  will see ~always, including every SIM).
+- `0x3B` — **direct convention**: bits are sent as-is. This is the usual TS.
 - `0x3F` — **inverse convention**: every byte is transformed (see below).
-  Ancient cards only.
+  Rare; old cards.
 
 #### What "inverse" actually means
 
@@ -297,11 +315,13 @@ look like corruption.
 
 `T0` packs two things into one byte:
 
-- **High nibble (bits 8–5)** — presence flags for the first group of
-  interface bytes, consumed in the order TA1, TB1, TC1, TD1: bit 5
-  (mask `0x1`) → `TA1` present, bit 6 (`0x2`) → `TB1`, bit 7 (`0x4`) →
-  `TC1`, bit 8 (`0x8`) → `TD1`. (Every `TDi` byte reuses this exact
-  scheme for the next group: `0x1`→TA, `0x2`→TB, `0x4`→TC, `0x8`→TD.)
+- **High nibble** — presence flags for the first group of interface
+  bytes, consumed in the order TA1, TB1, TC1, TD1. Take `y := T0 >> 4`,
+  then: `y&0x1` → TA1, `y&0x2` → TB1, `y&0x4` → TC1, `y&0x8` → TD1.
+  On the **raw** T0 byte those same flags are `0x10`/`0x20`/`0x40`/`0x80`;
+  `T0&0x1` is *not* TA1 (that bit belongs to K). Every `TDi` reuses this
+  nibble scheme for the next group (`0x1`→TA, `0x2`→TB, `0x4`→TC,
+  `0x8`→TD).
 - **Low nibble (bits 4–1)** — `K`, the number of **historical bytes**
   (0–15). The historical bytes are a free-form identification block at
   the tail of the ATR (issuer data, version strings, TLV objects) —
@@ -322,14 +342,15 @@ These appear in the order TA1, TB1, TC1, TD1 — only the ones flagged in T0.
   D=1 → 372 clocks per bit (~9600 bit/s at 3.57 MHz). Smaller F or larger
   D = faster. Common values:
 
-  | TA1 | F | D | Meaning |
-  |-----|---|---|---------|
-  | `0x11` | 372 | 1 | Default speed |
-  | `0x95` | 512 | 16 | ~16× faster than default |
-  | `0x96` | 512 | 32 | ~32× faster (typical fast SIM) |
+  | TA1 | F | D | clocks/bit | vs default |
+  |-----|---|---|------------|------------|
+  | `0x11` | 372 | 1 | 372 | default |
+  | `0x95` | 512 | 16 | 32 | ~12× faster |
+  | `0x96` | 512 | 32 | 16 | ~23× faster (common fast-clock TA1) |
 
-  (Full FI/DI tables are in ISO 7816-3; these three cover nearly every
-  card you will meet.)
+  The multiplier is `372 / (F/D)`, not D. D=16 is the baud factor, not
+  "16× speed". (Full FI/DI tables are in ISO 7816-3; these three cover
+  nearly every card you will meet.)
 
 - **TB1 — programming voltage (VPP).** Obsolete — modern cards generate
   programming voltage internally and ignore VPP. `TB1 = 0x00` means "no
@@ -353,10 +374,11 @@ Each `TDi` byte also packs two things:
 The chain ends at the first `TDi` whose high nibble is `0`. If *no* TD
 byte appears at all, the card offers **T=0 only**.
 
-- **TA2 — mode.** Present only when some TD flags it. Bit 5 (`0x10`):
+- **TA2 — mode.** Present only when some TD flags it. Bit 8 (`0x80`):
   `0` = **specific mode** (use exactly these parameters, no PPS);
-  `1` = **negotiable mode** (PPS may change them). Bits 4–1 repeat the
-  protocol number.
+  `1` = **negotiable mode** (PPS may change them). Bit 5 (`0x10`):
+  `0` = use the interface-byte parameters, `1` = implicit defaults.
+  Bits 4–1 repeat the protocol number.
 - **TC2 (T=0)** — work waiting time (`WI`): how long the card may take
   before answering.
 - **TA3/TB3 (T=1)** — block-size and timing tuning (`IFSC`, `BWI/CWI`).
@@ -365,20 +387,38 @@ byte appears at all, the card offers **T=0 only**.
 
 ### 5.5 Historical bytes — the free-form ID card
 
-`K` bytes (the count announced by T0's low nibble, [§5.2 T0 — the table of contents](#52-t0--the-table-of-contents)), sitting between
-the last interface byte and the optional TCK. They are issuer-defined:
-there is no fixed layout, but the **first** historical byte is a category
-indicator that tells you how to read the rest. The three you will meet:
+The interface bytes (TA/TB/TC/TD) answer "how do we talk?" — speed,
+protocol, extra guard time. The **historical bytes** answer "who is this
+chip?" They are `K` extra bytes (`K` = T0's low nibble, 0–15,
+[§5.2 T0 — the table of contents](#52-t0--the-table-of-contents)) sitting
+**after** the last interface byte and **before** the optional TCK.
 
-- `0x00` — the *last* historical byte is a **status indicator** (card life
-  cycle: `0x00` = powered, plus command-response trailer). Common on SIMs.
-- `0x80` — the *next* byte is a compact-TLV tag describing following card
-  data (see PC/SC Part 10 / `PCSCTLVStructure` in this repo).
-- `0x81` and up — issuer/application identifier follows.
+They are not commands, not file contents, and not voltage. No APDU has
+run yet. The issuer stuffed a short identity blob into the reset answer
+so a host can recognise the card (or at least its family) before
+`SELECT`. PC/SC just hands you the raw ATR; parsing this blob is your
+code.
 
-The rest is card-specific (often anissuer string, version, or TLV data).
-Card-type identification by ATR ([§5.8 Practical ATR use](#58-practical-atr-use)) mostly matches on prefixes covering
-TS…TD plus the first historical bytes.
+**What they are not a substitute for:** a historical AID-like field, if
+present, is a hint. The real application list still comes from `SELECT`
+/ scanning after you connect.
+
+The first historical byte is a **category indicator** (ISO 7816-4). It
+says how to read the remaining `K−1` bytes:
+
+- `0x00` — the **last three** historical bytes are a status indicator:
+  one life-cycle byte plus two status bytes (the same shape as SW1 SW2).
+  Life-cycle `0x00` means **no information given**, not "powered".
+- `0x80` — the rest is **compact-TLV** (ISO 7816-4): each object is one
+  header byte (high nibble = tag, low nibble = length) followed by that
+  many value bytes. This is not PC/SC Part 10 and not
+  `PCSCTLVStructure` (those describe reader features, a different TLV
+  on a different path).
+- Any other first byte — **proprietary**. Do not treat it as an
+  application identifier unless that card's specification says so.
+
+Card-type identification by ATR ([§5.8 Practical ATR use](#58-practical-atr-use))
+mostly matches a prefix covering TS…TD plus the first historical bytes.
 
 ### 5.6 TCK — the checksum
 
@@ -393,7 +433,7 @@ individually: each character carries an even-parity bit, and a receiver
 that sees bad parity pulls the I/O line low to demand retransmission of
 that one byte — corruption is retried on the spot instead of detected
 after the fact. (T=1 does the same job per block with its LRC/EDC
-checksum plus R-block retries, [§8.2 T=1 — block-oriented, the fast lane](#82-t1--block-oriented-the-fast-lane).) What no-TCK costs you is a
+checksum plus R-block retries, [§8.2 T=1 — block-oriented](#82-t1--block-oriented).) What no-TCK costs you is a
 whole-message integrity verdict: with TCK you can prove the full ATR
 arrived intact; without it, validate structurally instead — walk the
 flag chain ([§5.7 Worked example (constructed, self-consistent)](#57-worked-example-constructed-self-consistent)) and confirm it consumes exactly K historical bytes with
@@ -413,10 +453,10 @@ ATR: `3B F0 11 00 00 11 01 F1`
 | `00` | TB1: no programming voltage |
 | `00` | TC1: default guard time |
 | `11` | TD1: next group has TA2 only (`1`=0001 → TA); protocol nibble `1` → **T=1 offered** (T=0 is always implicit) |
-| `01` | TA2: specific mode (bit 5 = 0), protocol `1` → T=1; TA2 is not a TD byte, so the chain ends here |
+| `01` | TA2: specific mode (bit 8 = 0), protocol `1` → T=1; TA2 is not a TD byte, so the chain ends here |
 | `F1` | TCK: `F0^11^00^00^11^01 = F1` ✓ (present because T=1 was offered) |
 
-Real SIM ATRs are longer (historical bytes, more groups), but every one
+Real card ATRs are longer (historical bytes, more groups), but every one
 parses with exactly this procedure: read TS, read T0, walk the flagged
 groups, read K historical bytes, check TCK if any TD announced T≠0.
 
@@ -515,14 +555,13 @@ trouble looks like next to a healthy baseline.
 | `80 4F 0C …` (15 bytes) | Historical block (see below) |
 | `6A` | TCK: recomputed XOR = `6A` ✓ |
 
-The historical block parses as textbook compact-TLV ([§5.5 Historical bytes — the free-form ID card](#55-historical-bytes--the-free-form-id-card)): first byte
-`80` → next byte is a tag (`4F`), then a length (`0C` = 12), then exactly
-12 bytes of value: `A0 00 00 03 06 03 00 01 00 00 00 00`. The `A0 00 00 …`
-shape is characteristic of an application identifier — compare it against
-the card issuer's documentation to confirm which application it names.
-No TA1 is present, so this card runs at default speed (372 clocks/bit).
-Verdict: a clean, fully self-consistent ATR. **This is the reference
-reading.**
+The historical block starts with category `80` ([§5.5 Historical bytes — the free-form ID card](#55-historical-bytes--the-free-form-id-card)).
+What follows is **not** compact-TLV (tag and length would share one
+byte). It is BER-TLV: tag `4F` (application identifier), length `0C`,
+value `A0 00 00 03 06 03 00 01 00 00 00 00`. That `A0 00 00 …` RID is a
+common PC/SC SIM/storage-card prefix — confirm against the issuer's
+documentation. No TA1, so default speed (372 clocks/bit). Structure and
+TCK both check out. **This is the reference reading.**
 
 **Via multi-size adapter:**
 `3B 9F 96 80 1F 87 80 31 E0 73 FE 21 19 67 4C 43 54 30 31 01 4A 83`
@@ -531,26 +570,27 @@ reading.**
 |-------|--------|
 | `3B` | TS: direct convention |
 | `9F` | T0: TA1 + TD1 (`9`), K=15 |
-| `96` | TA1: F=512, D=32 — claims ~12× default speed |
+| `96` | TA1: F=512, D=32 — claims ~23× default speed |
 | `80` | TD1: TD2 follows; protocol T=0 |
-| `1F` | TD2: TA3 follows (`1` → TA); `F` = global, no new protocol |
-| `87` | TA3; chain ends (TA3 is not a TD byte) |
-| 15 hist bytes + `83` | See diagnosis below |
+| `1F` | TD2: TA3 follows (`1` → TA); `F` = T=15 global, not a transport protocol |
+| `87` | TA3 (global); chain ends (TA3 is not a TD byte) |
+| 15 hist bytes | Starts `80 31 E0 …` — see below |
+| `83` | TCK: T=15 was indicated, so TCK **must** be present; XOR of T0..hist = `83` ✓ |
 
-Three red flags, all verified: (1) no TD byte announces a non-zero
-protocol, so **no TCK should exist** — yet one trailing byte (`83`)
-remains; (2) the historical block fails TLV validation (`80` → tag
-`31`, length `E0` = 224, but only 13 bytes remain); (3) the readable
-ASCII fragment `LCT01` (`4C 43 54 30 31`) sits mid-block — issuer-string
-debris in a block that otherwise doesn't parse. But here is the telling
-detail: XOR over T0..hist equals exactly `83`. A **valid checksum over
-invalid content** means the reader received these bytes intact — the
-card itself emitted a confused ATR, i.e. its reset sequence ran on
-marginal power/clock through the adapter. Wire noise would have broken
-the checksum instead. Also note this ATR claims fast parameters
-(`TA1=96`) while the direct one uses defaults: same chip, different
-negotiation path — and given the corruption, trust neither the speed
-claim nor the extra bytes until a clean re-read. **Action: reseat the
+The checksum is valid: the reader received these bytes intact. Wire
+noise would have broken TCK. What is wrong is the **content**:
+
+- After category `80`, the remaining 14 bytes do **not** parse as
+  compact-TLV (the next objects overrun or leave a broken tail).
+- The ASCII fragment `LCT01` (`4C 43 54 30 31`) sits in that tail —
+  issuer-string debris in a block that does not parse.
+- `TA1=96` claims a fast clock while the direct reading used defaults:
+  same chip, different negotiation path.
+
+Valid TCK + unparseable historical bytes means the card emitted a
+confused identity blob (typical of a messy reset through an adapter),
+not that a byte was dropped on the wire. Do not match this ATR against
+card-type tables, and do not trust the TA1 speed. **Action: reseat the
 adapter, read 2–3 times, and only trust ATRs that validate end to end
 like the direct reading.**
 
@@ -575,7 +615,7 @@ in each entry's `EventState` (and ATR). The mental model:
 |------|---------|
 | `SCardStatePresent` | A card is in the reader |
 | `SCardStateEmpty` | Reader is empty |
-| `SCardStateMute` | Card is present but **not answering** (no usable ATR) — the "sick card" flag |
+| `SCardStateMute` | Card is present but **not answering** (no usable ATR) |
 | `SCardStateUnpowered` | Card present but not powered |
 | `SCardStateUnavailable` | The **reader** is gone/unusable (not the card) |
 | `SCardStateChanged` | "Something changed" — see [§6.2 The three traps](#62-the-three-traps), never trust it alone |
@@ -624,7 +664,7 @@ example). Never infer *which* reader changed from the PnP entry itself.
 
 Two common field observations, decoded with the model above:
 
-**Case A — direct SIM: short/basic ATR, "nothing more."**
+**Case A — card seated directly: short/basic ATR, "nothing more."**
 A minimal ATR (TS+T0, few or no interface bytes, short history) only means
 the card negotiates the *defaults*: T=0 at 372 clocks/etu. "Nothing more"
 afterward is an application-layer matter — connecting and selecting an
@@ -632,9 +672,9 @@ application (SELECT by AID) is a separate step from the ATR, and a bare
 ATR never lists files or keys. If even `SCardConnect` fails, suspect power
 or sharing (another process holding the card exclusive), not the ATR.
 
-**Case B — multi-size adapter: plenty of reader info, no ATR.**
-"Reader info without ATR" = the *reader* enumerates fine (PnP, name,
-slots) but the *slot* reports `Present`+`Mute`, or `Present` with
+**Case B — multi-size adapter: the reader enumerates, the slot has no usable ATR.**
+The *reader* enumerates (PnP, name, slots) but the *slot* reports
+`Present`+`Mute`, or `Present` with
 `ATRLength == 0`. The passive adapter did not change the chip's answer —
 it degraded the contacts (alignment, pressure, thickness, dirt, worn
 adapter springs). The card is electrically "there" (presence detect is a
@@ -743,19 +783,30 @@ Both carry the same APDUs ([§3 APDUs: structure, framing, validation, recovery]
 T=0 moves one byte at a time, with the card sending **procedure bytes**
 to steer the transfer:
 
-- Send header (`CLA INS P1 P2`), then the card replies per-byte: `ACK`
-  (send next byte), `NULL` (`0x60`, "still working, wait"), or straight
-  to `SW1 SW2`.
+- Send the header (`CLA INS P1 P2`). The card replies with a procedure
+  byte, not with an extra command you type:
+  - **ACK** — the card repeats `INS` or `INS xor 0xFF`. That means
+    “send the next data byte” or “I will send the next byte”. On a
+    trace you see `A4` or `5B` after a SELECT header, not the word ACK.
+  - **NULL** (`0x60`) — still working, wait.
+  - **SW1 SW2** — the transfer is done.
+  The reader/IFD consumes these bytes. `SCardTransmit` still looks like
+  one APDU in, one APDU+SW out; your Go code does not send ACK.
 - Consequence: a command and its response are interleaved, and large
   responses don't fit the simple flow. Two status words exist for that:
   - `SW1 = 0x61, SW2 = xx` — "I have `xx` more bytes; ask for them with
     **GET RESPONSE**: `00 C0 00 00 xx`." Repeat until `90 00`.
   - `SW1 = 0x6C, SW2 = xx` — "wrong expected length; resend with
     `Le = xx`."
-- T=0 is chatty (a byte-level handshake per byte) but universal: every
-  card speaks it.
+- T=0 is chatty (a byte-level handshake per byte). It is the default
+  when the ATR has no TD byte, and many cards still offer it. It is
+  not universal: a card that only advertises T=1 — especially in
+  specific mode, which locks T=1 and skips PPS — never speaks T=0.
+  Trust the TD chain and `activeProtocol` from `SCardConnect`; use the
+  matching PCI. See the T=1-only skeleton in
+  [§11 Other contact cards](#11-other-contact-cards).
 
-### 8.2 T=1 — block-oriented, the fast lane
+### 8.2 T=1 — block-oriented
 
 T=1 wraps everything in **blocks** with checksums (LRC/EDC), like tiny
 network packets:
@@ -897,7 +948,7 @@ PIN is dead — switch to the PUK flow instead of retrying the command.
 
 ---
 
-## 11. Beyond SIM: other contact cards
+## 11. Other contact cards
 
 `pcscgo` binds the whole PC/SC standard, so every contact card works the
 same way up to `SCardTransmit` — only the ATR shapes and the APDU
@@ -923,7 +974,7 @@ is what you are looking for.
 
 **The EMV dialect in one paragraph:** after `SCardConnect`, EMV apps
 `SELECT` by AID (e.g. `A0 00 00 00 03 …` for Visa-type apps),
-read the application's FCI template, then pull data with `READ RECORD`
+read the application's FCI (File Control Information) template, then pull data with `READ RECORD`
 rather than `READ BINARY`. Records, PDOL/GPO negotiation, and
 cryptograms are EMV-application specifics *above* the transport this
 library provides — same wire, richer conversation. (Note the
@@ -937,18 +988,27 @@ up in both places.)
 
 | Term | Meaning |
 |------|---------|
+| AID | Application Identifier — SELECT argument that names a DF |
 | APDU | One command/response pair (CLA INS P1 P2 … + SW1 SW2) |
 | ATR | Answer to Reset — card's self-description after reset ([§5 ATR anatomy, byte by byte](#5-atr-anatomy-byte-by-byte)) |
 | CCID | Standard USB protocol most readers speak |
 | Cold / warm ATR | After power-up / after reset-without-power-down |
+| DF | Dedicated File — a directory; an application is usually a DF |
+| EF | Elementary File — a leaf that holds bytes |
 | etu | Elementary time unit — duration of one bit on the wire |
+| FCI / FCP | File Control Information / File Control Parameters — what SELECT returns about the current file |
+| Historical bytes | Identity blob at the tail of the ATR, before TCK ([§5.5 Historical bytes — the free-form ID card](#55-historical-bytes--the-free-form-id-card)) |
 | IFD | Interface device (reader) + its driver |
+| Lc / Le | Command data length / maximum response length wanted |
+| MF | Master File — root of the card file tree |
 | Mute | Present-but-silent card (`SCardStateMute`) |
 | Multi-string | `\x00`-separated, `\x00\x00`-terminated name list |
 | PCI | Protocol Control Info — T=0/T=1 descriptor for transmit |
 | pcscd | Daemon owning the readers |
 | PPS | Protocol and Parameters Selection (post-ATR negotiation) |
+| SELECT | APDU INS `0xA4` — choose a DF or EF; not `SCardConnect` |
 | SW1/SW2 | Two status bytes ending every response (`90 00` = OK) |
+| T=15 | Global interface bytes in the ATR (class, clock stop) — not a transport protocol |
 
 ## 13. Where to go next
 

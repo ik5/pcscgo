@@ -29,6 +29,8 @@ Before using pcscgo, it helps to understand the PC/SC architecture and how this 
 
 The standard is maintained by the **PC/SC Workgroup** (comprising Microsoft, Apple, Gemalto, NXP, and others) and is implemented on Windows, Linux, macOS, and BSDs.
 
+New to smart cards? See [smart_card_basics.md](smart_card_basics.md) — a beginner's guide to cards, readers, ATRs, APDUs, and troubleshooting with this low-level library.
+
 ### How PC/SC Works
 
 ```
@@ -116,12 +118,14 @@ Think of pcscgo as a **thin translation layer**:
 4. **APDU I/O** = Raw command/response pairs (`SCardTransmit`)
 
 The protocol flow:
+
 ```
-SCardEstablishContext → SCardListReaders → SCardConnect → 
+SCardEstablishContext → SCardListReaders → SCardConnect →
 SCardTransmit (APDU) → ... → SCardDisconnect → SCardReleaseContext
 ```
 
 Monitoring for events uses a separate pattern:
+
 ```
 SCardGetStatusChange (blocks until state change)
 ```
@@ -134,65 +138,65 @@ This is the same mental model as the C API — pcscgo just makes it idiomatic Go
 package main
 
 import (
-	"errors"
-	"log"
-	"strings"
+ "errors"
+ "log"
+ "strings"
 
-	"github.com/ik5/pcscgo"
+ "github.com/ik5/pcscgo"
 )
 
 func main() {
-	// 1. Establish context with PC/SC resource manager
-	var ctx pcscgo.SCardContext
-	err := pcscgo.SCardEstablishContext(pcscgo.SCardScopeUser, nil, nil, &ctx)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer pcscgo.SCardReleaseContext(ctx)
+ // 1. Establish context with PC/SC resource manager
+ var ctx pcscgo.SCardContext
+ err := pcscgo.SCardEstablishContext(pcscgo.SCardScopeUser, nil, nil, &ctx)
+ if err != nil {
+  log.Fatal(err)
+ }
+ defer pcscgo.SCardReleaseContext(ctx)
 
-	// 2. List available readers (query size, then fill buffer)
-	n, err := pcscgo.SCardListReaders(ctx, "", nil)
-	if errors.Is(err, pcscgo.SCardErrorNoReadersAvailable) {
-		log.Println("No readers found")
-		return
-	}
-	if err != nil {
-		log.Fatal(err)
-	}
-	buf := make([]byte, n)
-	if n, err = pcscgo.SCardListReaders(ctx, "", buf); err != nil {
-		log.Fatal(err)
-	}
-	readers := strings.Split(strings.TrimRight(string(buf[:n]), "\x00"), "\x00")
+ // 2. List available readers (query size, then fill buffer)
+ n, err := pcscgo.SCardListReaders(ctx, "", nil)
+ if errors.Is(err, pcscgo.SCardErrorNoReadersAvailable) {
+  log.Println("No readers found")
+  return
+ }
+ if err != nil {
+  log.Fatal(err)
+ }
+ buf := make([]byte, n)
+ if n, err = pcscgo.SCardListReaders(ctx, "", buf); err != nil {
+  log.Fatal(err)
+ }
+ readers := strings.Split(strings.TrimRight(string(buf[:n]), "\x00"), "\x00")
 
-	// 3. Connect to first reader
-	var card pcscgo.SCardHandle
-	var proto pcscgo.DWord
-	err = pcscgo.SCardConnect(ctx, readers[0], pcscgo.SCardShareShared, pcscgo.SCardProtocolAny, &card, &proto)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer pcscgo.SCardDisconnect(card, pcscgo.SCardLeaveCard)
+ // 3. Connect to first reader
+ var card pcscgo.SCardHandle
+ var proto pcscgo.DWord
+ err = pcscgo.SCardConnect(ctx, readers[0], pcscgo.SCardShareShared, pcscgo.SCardProtocolAny, &card, &proto)
+ if err != nil {
+  log.Fatal(err)
+ }
+ defer pcscgo.SCardDisconnect(card, pcscgo.SCardLeaveCard)
 
-	// 4. Send APDU command (example: SELECT "1PAY.SYS.DDF01")
-	selectPSE := []byte{0x00, 0xA4, 0x04, 0x00, 0x0E,
-		'1', 'P', 'A', 'Y', '.', 'S', 'Y', 'S', '.', 'D', 'D', 'F', '0', '1', 0x00}
-	pci := pcscgo.SCardPCIT1()
-	if proto == pcscgo.SCardProtocolT0 {
-		pci = pcscgo.SCardPCIT0()
-	}
-	recv := make([]byte, 256)
-	n, err = pcscgo.SCardTransmit(card, pci, selectPSE, nil, recv)
-	if err != nil {
-		log.Fatal(err)
-	}
+ // 4. Send APDU command (example: SELECT "1PAY.SYS.DDF01")
+ selectPSE := []byte{0x00, 0xA4, 0x04, 0x00, 0x0E,
+  '1', 'P', 'A', 'Y', '.', 'S', 'Y', 'S', '.', 'D', 'D', 'F', '0', '1', 0x00}
+ pci := pcscgo.SCardPCIT1()
+ if proto == pcscgo.SCardProtocolT0 {
+  pci = pcscgo.SCardPCIT0()
+ }
+ recv := make([]byte, 256)
+ n, err = pcscgo.SCardTransmit(card, pci, selectPSE, nil, recv)
+ if err != nil {
+  log.Fatal(err)
+ }
 
-	// Check response (last 2 bytes = SW1 SW2)
-	response := recv[:n]
-	if len(response) >= 2 {
-		sw1, sw2 := response[len(response)-2], response[len(response)-1]
-		log.Printf("SW1SW2: %02X%02X", sw1, sw2)
-	}
+ // Check response (last 2 bytes = SW1 SW2)
+ response := recv[:n]
+ if len(response) >= 2 {
+  sw1, sw2 := response[len(response)-2], response[len(response)-1]
+  log.Printf("SW1SW2: %02X%02X", sw1, sw2)
+ }
 }
 ```
 
@@ -200,11 +204,11 @@ func main() {
 
 Select **exactly one** backend at compile time via build tags:
 
-| Mode | Build Command | Description |
-|------|---------------|-------------|
-| **purego** | `go build -tags=pcsc_purego` | Runtime loading via `dlopen`/`dlsym` (no CGO). Cross-compiles easily. |
-| **dynamic** | `CGO_ENABLED=1 go build -tags=pcsc_dynamic` | Standard CGO with dynamic linking to `libpcsclite.so`. |
-| **static** | `CGO_ENABLED=1 go build -tags=pcsc_static` | CGO with static linking (`libpcsclite.a` + deps). No runtime deps. |
+| Mode        | Build Command                               | Description                                                           |
+| ----------- | ------------------------------------------- | --------------------------------------------------------------------- |
+| **purego**  | `go build -tags=pcsc_purego`                | Runtime loading via `dlopen`/`dlsym` (no CGO). Cross-compiles easily. |
+| **dynamic** | `CGO_ENABLED=1 go build -tags=pcsc_dynamic` | Standard CGO with dynamic linking to `libpcsclite.so`.                |
+| **static**  | `CGO_ENABLED=1 go build -tags=pcsc_static`  | CGO with static linking (`libpcsclite.a` + deps). No runtime deps.    |
 
 **Only one backend is compiled** — enforced by `mode_guard.go`.
 
@@ -216,15 +220,16 @@ In purego mode, load the library at runtime:
 import "github.com/ik5/pcscgo"
 
 func main() {
-	// Optional: custom path (or set PCSCLITE_LIB_PATH env var)
-	if err := pcscgo.Load("/usr/lib/x86_64-linux-gnu/libpcsclite.so.1"); err != nil {
-		log.Fatal(err)
-	}
-	// ... use library normally ...
+ // Optional: custom path (or set PCSCLITE_LIB_PATH env var)
+ if err := pcscgo.Load("/usr/lib/x86_64-linux-gnu/libpcsclite.so.1"); err != nil {
+  log.Fatal(err)
+ }
+ // ... use library normally ...
 }
 ```
 
 Default library paths by OS:
+
 - **Linux**: `libpcsclite.so.1`
 - **FreeBSD/OpenBSD/NetBSD**: `libpcsclite.so`
 
@@ -258,11 +263,11 @@ if errors.Is(err, pcscgo.ErrNotLoaded) { ... }             // purego lib not loa
 
 ### Error Types
 
-| Type | Description |
-|------|-------------|
+| Type        | Description                                                                                   |
+| ----------- | --------------------------------------------------------------------------------------------- |
 | `PCSCError` | Wraps PC/SC error code with message. Implements `error`, `Unwrap() error`, `IsSuccess() bool` |
-| `LoadError` | Purego library loading failures (`dlopen`, `dlsym`). Implements `error`, `Unwrap() error` |
-| `ErrorCode` | Raw PC/SC code (uint32). Implements `error` interface. |
+| `LoadError` | Purego library loading failures (`dlopen`, `dlsym`). Implements `error`, `Unwrap() error`     |
+| `ErrorCode` | Raw PC/SC code (uint32). Implements `error` interface.                                        |
 
 ## Signal Handling
 
@@ -288,12 +293,12 @@ if errors.Is(err, pcscgo.SCardErrorCancelled) {
 
 ## Platform Support
 
-| OS | Architectures | Backends | Status |
-|----|---------------|----------|--------|
-| Linux | amd64, 386, arm64, arm, ... | purego, dynamic, static | ✅ Tested |
-| FreeBSD | amd64, 386 | purego, dynamic, static | ✅ Tested |
-| OpenBSD | amd64 | purego, dynamic, static | ✅ Tested |
-| NetBSD | amd64 | purego, dynamic, static | ✅ Tested |
+| OS      | Architectures               | Backends                | Status    |
+| ------- | --------------------------- | ----------------------- | --------- |
+| Linux   | amd64, 386, arm64, arm, ... | purego, dynamic, static | ✅ Tested |
+| FreeBSD | amd64, 386                  | purego, dynamic, static | ✅ Tested |
+| OpenBSD | amd64                       | purego, dynamic, static | ✅ Tested |
+| NetBSD  | amd64                       | purego, dynamic, static | ✅ Tested |
 
 **macOS and Windows are not supported** — the build fails on any OS outside the table (`libpcscgo_others.go`).
 
@@ -311,6 +316,7 @@ ptr := unsafe.Pointer(&s) // Layout mismatch!
 ```
 
 **Rules:**
+
 - Never pass Go struct pointers to C
 - Use `encoding/binary` (Read/Write) for wire encoding
 - `PCSCTLVStructure.Value` is **always big-endian** (PC/SC Part 10)

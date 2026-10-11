@@ -663,26 +663,67 @@ TCK both check out. **This is the reference reading.**
 | `96` | TA1: F=512, D=32 — claims ~23× default speed |
 | `80` | TD1: TD2 follows; protocol T=0 |
 | `1F` | TD2: TA3 follows (`1` → TA); `F` = T=15 global, not a transport protocol |
-| `87` | TA3 (global); chain ends (TA3 is not a TD byte) |
-| 15 hist bytes | Starts `80 31 E0 …` — see below |
+| `87` | TA3 (T=15 global): clock-stop high; classes A/B/C (5 V / 3 V / 1.8 V) |
+| 15 hist bytes | Compact-TLV after category `80` — see below |
 | `83` | TCK: T=15 was indicated, so TCK **must** be present; XOR of T0..hist = `83` ✓ |
 
-The checksum is valid: the reader received these bytes intact. Wire
-noise would have broken TCK. What is wrong is the **content**:
+This ATR is structurally valid. Compact-TLV uses **one** header byte
+(high nibble = tag, low nibble = length), then that many value bytes —
+do not count a separate length byte (that is BER-TLV). After category
+`80`, 14 bytes remain:
 
-- After category `80`, the remaining 14 bytes do **not** parse as
-  compact-TLV (the next objects overrun or leave a broken tail).
-- The ASCII fragment `LCT01` (`4C 43 54 30 31`) sits in that tail —
-  issuer-string debris in a block that does not parse.
-- `TA1=96` claims a fast clock while the direct reading used defaults:
-  same chip, different negotiation path.
+```
+31 E0                 tag 3, len 1  card service E0
+73 FE 21 19           tag 7, len 3  card capabilities
+67 4C 43 54 30 31 01 4A  tag 6, len 7  pre-issuing data ("LCT01" + 01 4A)
+```
 
-Valid TCK + unparseable historical bytes means the card emitted a
-confused identity blob (typical of a messy reset through an adapter),
-not that a byte was dropped on the wire. Do not match this ATR against
-card-type tables, and do not trust the TA1 speed. **Action: reseat the
-adapter, read 2–3 times, and only trust ATRs that validate end to end
-like the direct reading.**
+2 + 4 + 8 = 14. TCK matches. `LCT01` is tag 6, not leftover junk.
+
+`examples/scan -v` prints those 22 bytes as hex and stops. `pcsc_scan`
+runs the same ISO 7816-3 walk and labels the fields. The dump below is
+**that same ATR**, not a second card:
+
+```
+ATR: 3B 9F 96 80 1F 87 80 31 E0 73 FE 21 19 67 4C 43 54 30 31 01 4A 83
++ TS = 3B --> Direct Convention
++ T0 = 9F, Y(1): 1001, K: 15 (historical bytes)
+  TA(1) = 96 --> Fi=512, Di=32, 16 cycles/ETU
+  TD(1) = 80 --> Y(i+1) = 1000, Protocol T = 0
+  TD(2) = 1F --> Y(i+1) = 0001, Protocol T = 15
+                 Global interface bytes following
+  TA(3) = 87 --> Clock stop: state H
+                 Class accepted: A 5V B 3V C 1.8V
++ Historical bytes: 80 31 E0 73 FE 21 19 67 4C 43 54 30 31 01 4A
+  Category indicator byte: 80 (compact TLV data object)
+    Tag: 3, len: 1 (card service data byte)  E0
+    Tag: 7, len: 3 (card capabilities)       FE 21 19
+    Tag: 6, len: 7 (pre-issuing data)        4C 43 54 30 31 01 4A
++ TCK = 83 (correct checksum)
+Possibly identified card: NONE
+```
+
+Why those lines look like that:
+
+- `Y(1): 1001` is T0's high nibble: TA1 and TD1 present (`9`), K=15.
+- `16 cycles/ETU` is F/D = 512/32 — the same TA1=`96` as the table
+  above (~23× vs default 372 clocks/bit). The bit/s figures assume a
+  reader clock (here 4 MHz); PC/SC does not expose that clock to you.
+- `Protocol T = 15` / "global interface bytes following" is why TA3
+  exists. T=15 is not a transport. TCK is still required because T=0
+  is not the only nibble that appeared.
+- Compact-TLV tags 3 / 7 / 6 are ISO 7816-4 names for those header
+  nibbles. Tag 6's seven bytes are pre-issuing data (`LCT01` is ASCII
+  in the first five).
+- `NONE` means the hex prefix is not in `smartcard_list.txt`. A valid
+  ATR can still be unknown to that list.
+
+It is still a **different** ATR from the direct seating: TA1=`96`
+(~23× default) vs no TA1; T=15 + TA3 class bytes vs T=1; compact-TLV
+historical vs the BER-TLV AID block. Same chip, different reset path
+through the adapter. Do not mix the two when matching card-type tables.
+If you need the direct reading, reseat without the adapter and read
+again.
 
 ---
 
@@ -842,10 +883,12 @@ its TA1, do not match it against card-type tables. Steps:
    parameters (T=0) rather than the suspect TA1 speed values, or abort
    with a clear "unreadable card" error instead of guessing.
 
-Contrast with the [§5.9 Case study: one card, two ATRs](#59-case-study-one-card-two-atrs) adapter case: checksum **valid** but content
-nonsense means the card emitted confused bytes (bad power during reset),
-not wire noise. Same seating ladder applies — but the diagnosis (card
-side vs wire side) tells you reseating, not cable-swapping, is the fix.
+Contrast with the [§5.9 Case study: one card, two ATRs](#59-case-study-one-card-two-atrs) adapter case: checksum **valid**
+and historical bytes parse as compact-TLV, but the ATR is **not** the
+same as the direct seating (TA1, T=15, different historical layout).
+That is a different reset path, not a broken checksum. Reseat without
+the adapter if you need the other ATR; do not treat TCK-valid compact-TLV
+as line noise.
 
 ### 7.4 APDU-level troubleshooting
 

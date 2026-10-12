@@ -256,6 +256,8 @@ Framing discipline: always split `data = recv[:n-2]`, `sw = recv[n-2:]`;
 |----|-------|---------|
 | `90 00` | Success | Done — data (if any) is valid |
 | `61 xx` | More available (T=0) | `xx` bytes waiting — fetch with GET RESPONSE ([§3.4 Recovery: the three resend patterns](#34-recovery-the-three-resend-patterns)), not an error |
+| `9F xx` | More available (classic SIM) | GSM 11.11 SIMs (CLA `A0`) use `9F xx` where UICC uses `61 xx`: `xx` bytes waiting, fetch with `A0 C0 00 00 xx` |
+| `91 xx` | Proactive command pending | UICC/SIM only: the command succeeded **and** the card has a SIM Toolkit (proactive) command waiting, `xx` bytes — fetch with `FETCH`. Treat as success for file access |
 | `6C xx` | Wrong length | Resend the identical command with `Le = xx` ([§3.4 Recovery: the three resend patterns](#34-recovery-the-three-resend-patterns)), not an error |
 | `63 Cx` | Counter | PIN-style retry counter, X tries left ([§10.3 PINs: when, which, how](#103-pins-when-which-how)) |
 | `67 00` | Wrong length | Lc/Le don't match the body — recount ([§3.1 Command anatomy: identify the case from the bytes](#31-command-anatomy-identify-the-case-from-the-bytes)), your bug |
@@ -464,16 +466,36 @@ Each `TDi` byte also packs two things:
 The chain ends at the first `TDi` whose high nibble is `0`. If *no* TD
 byte appears at all, the card offers **T=0 only**.
 
-- **TA2 — mode.** Present only when some TD flags it. Bit 8 (`0x80`):
-  `0` = **specific mode** (use exactly these parameters, no PPS);
-  `1` = **negotiable mode** (PPS may change them). Bit 5 (`0x10`):
-  `0` = use the interface-byte parameters, `1` = implicit defaults.
-  Bits 4–1 repeat the protocol number.
+- **TA2 — mode.** *Presence* of TA2 is what selects the mode: TA2
+  present = the card is in **specific mode** (it starts with one fixed
+  protocol and parameter set, and the reader should not send PPS);
+  TA2 absent = **negotiable mode** (PPS may change the parameters).
+  The bits inside TA2: bit 8 (`0x80`) = `0` means the card *is able to
+  change* to the other mode, `1` means it *cannot*. Bit 5 (`0x10`) =
+  `0` means use the interface-byte parameters, `1` means the parameters
+  are implicit (known to the terminal some other way). Bits 4–1 give the
+  protocol to use.
 - **TC2 (T=0)** — work waiting time (`WI`): how long the card may take
   before answering.
 - **TA3/TB3 (T=1)** — block-size and timing tuning (`IFSC`, `BWI/CWI`).
   Defaults work; you only care if you tune T=1 performance.
-- **TCi for T≠0** — usually `0x00`/absent; link-layer details.
+
+**The meaning of TAi/TBi/TCi depends on position and protocol.** For
+`i ≥ 3` the same byte means different things depending on the protocol
+named by the *preceding* `TD`. Parse with (index, protocol) as the key,
+never with the byte position alone:
+
+| Byte | After TD announcing T=0 | After TD announcing T=1 | After TD announcing T=15 |
+|------|-------------------------|--------------------------|---------------------------|
+| `TA1` | `FI`/`DI` (speed), always | — | — |
+| `TC2` | `WI` (work waiting time) | — | — |
+| `TA3` | — | `IFSC` (card's max block size) | clock-stop support + supported classes (A/B/C) |
+| `TB3` | — | `BWI`/`CWI` (timing) | — |
+| `TCi` (i ≥ 3) | — | selects error detection: LRC (`0`) or CRC (`1`) | — |
+
+Treating "TCi for T≠0" as "usually `00`, ignore" is a shortcut that
+hides the LRC/CRC choice; do not hard-code it. (Table is from memory of
+ISO 7816-3 — confirm against the standard before relying on it.)
 
 ### 5.5 Historical bytes — the free-form ID card
 
@@ -496,14 +518,19 @@ present, is a hint. The real application list still comes from `SELECT`
 The first historical byte is a **category indicator** (ISO 7816-4). It
 says how to read the remaining `K−1` bytes:
 
-- `0x00` — the **last three** historical bytes are a status indicator:
-  one life-cycle byte plus two status bytes (the same shape as SW1 SW2).
+- `0x00` — **compact-TLV data objects, followed by a mandatory 3-byte
+  status indicator** at the very end of the historical bytes: one
+  life-cycle byte plus two status bytes (the same shape as SW1 SW2).
   Life-cycle `0x00` means **no information given**, not "powered".
-- `0x80` — the rest is **compact-TLV** (ISO 7816-4): each object is one
-  header byte (high nibble = tag, low nibble = length) followed by that
-  many value bytes. This is not PC/SC Part 10 and not
-  `PCSCTLVStructure` (those describe reader features, a different TLV
-  on a different path).
+  Parse the TLV part from byte 2 up to the last three bytes.
+- `0x80` — **compact-TLV data objects**, with the status indicator (if
+  the card has one) carried as the optional tag `8` object instead of a
+  fixed trailer. Each object is one header byte (high nibble = tag, low
+  nibble = length) followed by that many value bytes. This is not PC/SC
+  Part 10 and not `PCSCTLVStructure` (those describe reader features, a
+  different TLV on a different path).
+- (Layouts for `0x00`/`0x80` are from memory of ISO 7816-4 — confirm
+  there.)
 - Any other first byte — **proprietary**. Do not treat it as an
   application identifier unless that card's specification says so.
 
@@ -543,7 +570,7 @@ ATR: `3B F0 11 00 00 11 01 F1`
 | `00` | TB1: no programming voltage |
 | `00` | TC1: default guard time |
 | `11` | TD1: next group has TA2 only (`1`=0001 → TA); protocol nibble `1` → **T=1 offered** (T=0 is always implicit) |
-| `01` | TA2: specific mode (bit 8 = 0), protocol `1` → T=1; TA2 is not a TD byte, so the chain ends here |
+| `01` | TA2 present → **specific mode**; bit 8 = 0 (card can switch to negotiable mode), bit 5 = 0 (use interface-byte parameters), protocol `1` → T=1; TA2 is not a TD byte, so the chain ends here |
 | `F1` | TCK: `F0^11^00^00^11^01 = F1` ✓ (present because T=1 was offered) |
 
 Real card ATRs are longer (historical bytes, more groups), but every one
@@ -584,7 +611,8 @@ td1 := atr[5]
 nextY, proto := td1>>4, td1&0x0F
 // td1 = 0x11 -> next group has TA2 only, protocol 1 (T=1)
 ta2 := atr[6]
-// ta2 = 0x01 -> specific mode, T=1; TA2 is not a TD, so the chain ends
+// ta2 present -> specific mode; 0x01 -> bit8=0 (card may switch), bit5=0, protocol T=1;
+// TA2 is not a TD, so the chain ends
 ```
 
 TCK re-computed over everything from T0 up to (excluding) itself:
@@ -608,7 +636,7 @@ TC1 present: true
 TD1 present: true
 TA1=11 -> FI=1 DI=1
 TD1=11 -> next Y=1 protocol=1
-TA2=01 -> specific mode, protocol 1, chain ends
+TA2=01 -> present (specific mode), protocol 1, chain ends
 TCK=F1 computed=F1 match=true
 ```
 
@@ -620,6 +648,12 @@ TCK=F1 computed=F1 match=true
    `SCardConnect` with `SCardProtocolAny` negotiates it, and the
    `activeProtocol` out-parameter tells you what won. Pass the matching
    PCI (`SCardPCIT0()` / `SCardPCIT1()`) to `SCardTransmit`.
+   Contactless (NFC/RFID) cards have no real ATR: the reader
+   **synthesizes** one per PC/SC Part 3, of the form `3B 8x 80 01 …`
+   with historical bytes `80 4F 0C` + RID `A0 00 00 03 06` + standard
+   byte + card-name bytes. `pcsc_scan`'s list recognizes that prefix
+   (e.g. `3B 8F 80 01 80 4F 0C A0 00 00 03 06 03 00 01 00 00 00 00 6A`
+   = MIFARE Standard 1K).
 3. **Speed**: TA1 tells you the negotiated bit rate (informational at the
    PC/SC level — the reader applies it).
 4. **Sanity limits**: an ATR is at most 33 bytes (`pcscgo.MaxATRSize`).
@@ -627,13 +661,21 @@ TCK=F1 computed=F1 match=true
 
 ### 5.9 Case study: one card, two ATRs
 
-The two readings below come from the same card in the same reader — once
-seated directly, once via a passive multi-size adapter. Both were
-machine-parsed with the procedure from [§5.7 Worked example (constructed, self-consistent)](#57-worked-example-constructed-self-consistent) and the checksums recomputed.
-This is what "reading an ATR" looks like in practice, and what adapter
-trouble looks like next to a healthy baseline.
+Two ATRs were captured from the same physical development SIM (Valid)
+using the same ACS contact reader (exact model: fill in from
+`pcsc_scan -v`), a reader with no RF/NFC front end. One was captured with
+the card seated directly, the other with the card in a passive
+sysmocom-style SIM adapter. Both were machine-parsed with the procedure
+from [§5.7 Worked example (constructed, self-consistent)](#57-worked-example-constructed-self-consistent) and the checksums recomputed.
 
-**Direct (no adapter):**
+**Cause is unknown.** An adapter is passive and cannot change what the
+chip says ([§1.1](#11-the-card)), and a contact-only reader should not
+produce the first ATR at all. Treat the two as two different
+observations until reproduced; record the reader name and interface
+with every ATR you capture.
+
+#### ATR 1: direct seating (shape of a reader-synthesized contactless ATR)
+
 `3B 8F 80 01 80 4F 0C A0 00 00 03 06 03 00 01 00 00 00 00 6A`
 
 | Bytes | Decode |
@@ -646,14 +688,18 @@ trouble looks like next to a healthy baseline.
 | `6A` | TCK: recomputed XOR = `6A` ✓ |
 
 The historical block starts with category `80` ([§5.5 Historical bytes — the free-form ID card](#55-historical-bytes--the-free-form-id-card)).
-What follows is **not** compact-TLV (tag and length would share one
-byte). It is BER-TLV: tag `4F` (application identifier), length `0C`,
-value `A0 00 00 03 06 03 00 01 00 00 00 00`. That `A0 00 00 …` RID is a
-common PC/SC SIM/storage-card prefix — confirm against the issuer's
-documentation. No TA1, so default speed (372 clocks/bit). Structure and
-TCK both check out. **This is the reference reading.**
+What follows is the PC/SC Part 3 layout used for contactless cards: tag
+`4F` (application identifier), length `0C`, value `A0 00 00 03 06` (the
+PC/SC workgroup RID), `03` (standard: ISO 14443 A part 3), `00 01`
+(card name: MIFARE Standard 1K per the `pcsc-tools` list), `00 00 00 00`
+(reserved). Readers **synthesize** this ATR for contactless cards,
+because an RF card has no ATR of its own. No TA1, so default speed.
+Structure and TCK both check out. Nothing in the bytes says whether the
+card is MIFARE; it says that whatever answered looked like one to the
+reader. A contact-only reader emitting this is the unexplained part.
 
-**Via multi-size adapter:**
+#### ATR 2: via the SIM adapter (the UICC-style SIM ATR)
+
 `3B 9F 96 80 1F 87 80 31 E0 73 FE 21 19 67 4C 43 54 30 31 01 4A 83`
 
 | Bytes | Decode |
@@ -682,7 +728,7 @@ do not count a separate length byte (that is BER-TLV). After category
 
 `examples/scan -v` prints those 22 bytes as hex and stops. `pcsc_scan`
 runs the same ISO 7816-3 walk and labels the fields. The dump below is
-**that same ATR**, not a second card:
+**ATR 2**, not a third card:
 
 ```
 ATR: 3B 9F 96 80 1F 87 80 31 E0 73 FE 21 19 67 4C 43 54 30 31 01 4A 83
@@ -718,12 +764,14 @@ Why those lines look like that:
 - `NONE` means the hex prefix is not in `smartcard_list.txt`. A valid
   ATR can still be unknown to that list.
 
-It is still a **different** ATR from the direct seating: TA1=`96`
-(~23× default) vs no TA1; T=15 + TA3 class bytes vs T=1; compact-TLV
-historical vs the BER-TLV AID block. Same chip, different reset path
-through the adapter. Do not mix the two when matching card-type tables.
-If you need the direct reading, reseat without the adapter and read
-again.
+The two ATRs differ in everything: TA1=`96` vs no TA1; T=15 + TA3 class
+bytes vs T=1; compact-TLV historical vs the PC/SC contactless block.
+Leading hypotheses to test, not conclusions: a cold vs warm reset or a
+voltage-class-dependent ATR, a card deliberately configured that way
+(it is a development card), or the two readings coming from different
+chips. To narrow it down, capture `pcsc_scan -v` for each presentation
+with the reader name, and repeat after a power cycle. Do not mix the two
+when matching card-type tables.
 
 ---
 
@@ -806,8 +854,8 @@ or sharing (another process holding the card exclusive), not the ATR.
 **Case B — multi-size adapter: the reader enumerates, the slot has no usable ATR.**
 The *reader* enumerates (PnP, name, slots) but the *slot* reports
 `Present`+`Mute`, or `Present` with
-`ATRLength == 0`. The passive adapter did not change the chip's answer —
-it degraded the contacts (alignment, pressure, thickness, dirt, worn
+`ATRLength == 0`. A passive adapter does not change the chip's answer —
+it can degrade the contacts (alignment, pressure, thickness, dirt, worn
 adapter springs). The card is electrically "there" (presence detect is a
 mechanical switch) but the I/O line can't carry a clean reset sequence.
 
@@ -838,7 +886,7 @@ Then:
 |--------------|---------|------------|
 | `Empty → Present`, ATR validates ([§5.9 Case study: one card, two ATRs](#59-case-study-one-card-two-atrs)) | Healthy insert | Parse ATR, `SCardConnect`, proceed |
 | `Present` + `Mute`, ATR length 0 | Card silent: contacts, seating, voltage, or dead chip | Reseat → clean → try direct (no adapter) → try another reader → read pcscd debug logs |
-| `Present`, ATR fails structure/TCK | Confused card or noisy line ([§5.9 Case study: one card, two ATRs](#59-case-study-one-card-two-atrs) adapter case) | Re-read 2–3 times; trust only stable, validating ATRs |
+| `Present`, ATR fails structure/TCK | Confused card or noisy line (compare with [§5.9 Case study: one card, two ATRs](#59-case-study-one-card-two-atrs), where both ATRs validate) | Re-read 2–3 times; trust only stable, validating ATRs |
 | `Present` + `Unpowered` | Powered down (e.g. after disconnect-with-unpower) | `SCardConnect`/`SCardReconnect` to power it back up |
 | `Unavailable` toggles | The USB reader came/went — not a card event | Re-enumerate with `SCardListReaders`, diff, rebuild states |
 | PnP entry `Changed` only | Reader list *may* have changed | `SCardListReaders` again and diff — never infer which reader from the PnP entry |
@@ -848,15 +896,21 @@ Then:
 
 Candidate causes, easiest to test first:
 
-- **Different reader/path** (direct vs adapter, or reader A vs B):
-  PPS negotiation results differ, and some readers report the
-  post-PPS parameters while others report the cold ATR.
+- **Different reader** (reader A vs B): PPS negotiation results differ,
+  and some readers report the post-PPS parameters while others report
+  the cold ATR. A passive adapter alone cannot change what the chip
+  says, but it can change power/clock quality, so a marginal card may
+  answer differently through one.
+- **Contactless vs contact interface**: a dual-interface card (or
+  reader) can present a reader-synthesized contactless ATR
+  (`3B 8x 80 01 …`) instead of the card's own contact ATR.
 - **Cold vs warm ATR**: power-up vs reset-without-power-down; historical
   bytes may differ.
 - **Marginal contacts**: a corrupted ATR fails TCK or parses oddly —
   flaky, changes between reads.
-- **Specific mode (TA2)**: a card in specific mode locks parameters;
-  readers that attempt PPS anyway can report different views.
+- **Specific mode (TA2 present)**: a card in specific mode starts with
+  fixed parameters; readers that attempt PPS anyway can report different
+  views.
 
 Test: compare the two ATRs field by field ([§5.7 Worked example (constructed, self-consistent)](#57-worked-example-constructed-self-consistent)). Same TS/T0/TD with
 different history = same card, different reset context. Different TD
@@ -883,12 +937,12 @@ its TA1, do not match it against card-type tables. Steps:
    parameters (T=0) rather than the suspect TA1 speed values, or abort
    with a clear "unreadable card" error instead of guessing.
 
-Contrast with the [§5.9 Case study: one card, two ATRs](#59-case-study-one-card-two-atrs) adapter case: checksum **valid**
-and historical bytes parse as compact-TLV, but the ATR is **not** the
-same as the direct seating (TA1, T=15, different historical layout).
-That is a different reset path, not a broken checksum. Reseat without
-the adapter if you need the other ATR; do not treat TCK-valid compact-TLV
-as line noise.
+Contrast with the [§5.9 Case study: one card, two ATRs](#59-case-study-one-card-two-atrs): both of its ATRs have a **valid**
+checksum and parse cleanly, yet they differ completely (TA1, T=15, the
+historical layout). That is not line noise; do not treat a TCK-valid
+ATR as corrupted just because it differs from another reading. Record
+which reader and interface produced each, and re-read to see which is
+stable.
 
 ### 7.4 APDU-level troubleshooting
 
@@ -1068,8 +1122,13 @@ tells you by refusing. (Design your code PIN-first for files you know are
 gated, rather than waiting for the refusal.)
 
 **How do you give it?** With `VERIFY`: header `00 20 00 <P2>`, data = the
-PIN. `P2` selects *which* PIN: on SIM/UICC cards `P2=01` is PIN1 and
-`P2=02` is PIN2 (card-family-specific — check the card's spec).
+PIN. `P2` selects *which* PIN (a key reference). On SIM/UICC cards the
+PIN field is always **8 bytes**: ASCII digits padded on the right with
+`FF`, so PIN `1234` is `00 20 00 01 08 31 32 33 34 FF FF FF FF`. USIM
+(UICC) key references: PIN1 = `01`, PIN2 = `81`, ADM1 = `0A` (check
+TS 31.102 / ETSI TS 102 221 for the full list; these are from memory).
+Classic GSM SIMs (TS 11.11) use CLA `A0` instead of `00` for all of
+this.
 
 **How many tries are left?** On UICC/SIM cards, send `VERIFY` with the
 PIN reference but *no PIN data*: the card answers `63 Cx` with the
@@ -1127,8 +1186,8 @@ rather than `READ BINARY`. Records, PDOL/GPO negotiation, and
 cryptograms are EMV-application specifics *above* the transport this
 library provides — same wire, richer conversation. (Note the
 `A0 00 00 …` shape here matches the application identifier found inside
-the [§5.9 Case study: one card, two ATRs](#59-case-study-one-card-two-atrs) case study's historical TLV — the same numbering scheme shows
-up in both places.)
+the PC/SC RID `A0 00 00 03 06` in the first [§5.9 Case study: one card, two ATRs](#59-case-study-one-card-two-atrs) ATR — the same `A0 00 00 …` RID scheme shows
+up in both places, with different registered owners.)
 
 ---
 

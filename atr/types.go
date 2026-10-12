@@ -35,10 +35,10 @@ type ATR struct {
 	// TS - Initial Character
 	TS InitialCharacter
 
-	// TO - the table of contents
-	TO uint8
+	// T0 - the table of contents
+	T0 uint8
 
-	// Groups - parameter group, length by TO field calculation for number of fields
+	// Groups - parameter group, length by T0 field calculation for number of fields
 	Groups []Group
 
 	// Historical -  the free-form ID card

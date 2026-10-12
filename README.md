@@ -185,7 +185,7 @@ func main() {
  if proto == pcscgo.SCardProtocolT0 {
   pci = pcscgo.SCardPCIT0()
  }
- recv := make([]byte, 256)
+ recv := make([]byte, pcscgo.MaxBufferSize) // 264: 256 data + SW1 SW2 + slack
  n, err = pcscgo.SCardTransmit(card, pci, selectPSE, nil, recv)
  if err != nil {
   log.Fatal(err)
